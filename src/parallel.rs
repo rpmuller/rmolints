@@ -4,7 +4,7 @@
 //! particularly useful for computing batches of two-electron integrals.
 
 use crate::common::CGBF;
-use crate::{hgp, rys, two_electron};
+use crate::{hgp, hgp_opt, rys, two_electron};
 use rayon::prelude::*;
 
 /// Method to use for computing two-electron integrals
@@ -14,8 +14,10 @@ pub enum ERIMethod {
     Standard,
     /// Rys quadrature method
     Rys,
-    /// Head-Gordon-Pople method
+    /// Head-Gordon-Pople method (original)
     HeadGordonPople,
+    /// Head-Gordon-Pople method (optimized)
+    HeadGordonPopleOpt,
 }
 
 /// Compute a batch of two-electron integrals in parallel
@@ -61,6 +63,7 @@ pub fn compute_eris_parallel(
                 ERIMethod::Standard => two_electron::electron_repulsion(bra1, bra2, ket1, ket2),
                 ERIMethod::Rys => rys::electron_repulsion_rys(bra1, bra2, ket1, ket2),
                 ERIMethod::HeadGordonPople => hgp::electron_repulsion_hgp(bra1, bra2, ket1, ket2),
+                ERIMethod::HeadGordonPopleOpt => hgp_opt::electron_repulsion_hgp_opt(bra1, bra2, ket1, ket2),
             }
         })
         .collect()
@@ -135,6 +138,7 @@ pub fn compute_eri_tensor_parallel(
                 ERIMethod::Standard => two_electron::electron_repulsion(bra1, bra2, ket1, ket2),
                 ERIMethod::Rys => rys::electron_repulsion_rys(bra1, bra2, ket1, ket2),
                 ERIMethod::HeadGordonPople => hgp::electron_repulsion_hgp(bra1, bra2, ket1, ket2),
+                ERIMethod::HeadGordonPopleOpt => hgp_opt::electron_repulsion_hgp_opt(bra1, bra2, ket1, ket2),
             };
 
             (i, j, k, l, value)

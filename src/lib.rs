@@ -18,6 +18,7 @@ pub mod one_electron;
 pub mod two_electron;
 pub mod rys;
 pub mod hgp;
+pub mod hgp_opt;
 pub mod parallel;
 pub mod boys;
 pub mod utils;
