@@ -351,8 +351,9 @@ fn compute_vrr_tensor(
                                                 * vrr[i_u][j_u][k_u][ic_u][jc_u][kc_u - 1][im_u + 1]);
                                 }
 
-                                if k > 0 {
-                                    val += k as f64 / (2.0 * (zeta + eta))
+                                // Fixed: check j > 0 before accessing j_u - 1
+                                if j > 0 {
+                                    val += j as f64 / (2.0 * (zeta + eta))
                                         * vrr[i_u][j_u - 1][k_u][ic_u][jc_u][kc_u][im_u + 1];
                                 }
 

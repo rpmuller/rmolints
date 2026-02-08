@@ -317,8 +317,9 @@ fn vrr(
                                             - zeta / (zeta + eta) * cache[&(i, j, k, ic, jc, kc - 1, im + 1)]);
                                 }
 
-                                if k > 0 {
-                                    val += k as f64 / (2.0 * (zeta + eta)) * cache[&(i, j - 1, k, ic, jc, kc, im + 1)];
+                                // Fixed: check j > 0 before accessing j - 1
+                                if j > 0 {
+                                    val += j as f64 / (2.0 * (zeta + eta)) * cache[&(i, j - 1, k, ic, jc, kc, im + 1)];
                                 }
 
                                 cache.insert((i, j, k, ic, jc, kc + 1, im), val);
