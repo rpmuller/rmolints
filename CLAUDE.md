@@ -19,4 +19,4 @@ The Python code typically has doctests that show how the code is called and dete
 
 ## Tools
 - rust/rustup/cargo are installed
-- Use uv to manage any python environments.
+- Use uv to manage any python environments

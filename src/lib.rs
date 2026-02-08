@@ -1,6 +1,8 @@
 //! # rmolints
 //!
 //! A high-performance molecular integrals library written in Rust.
+
+#![cfg_attr(feature = "simd", feature(portable_simd))]
 //!
 //! This library provides implementations of one- and two-electron integrals
 //! used in quantum chemistry calculations, ported from the PyQuante2 project.
@@ -19,6 +21,8 @@ pub mod two_electron;
 pub mod rys;
 pub mod hgp;
 pub mod hgp_opt;
+#[cfg(feature = "simd")]
+pub mod hgp_simd;
 pub mod parallel;
 pub mod boys;
 pub mod utils;

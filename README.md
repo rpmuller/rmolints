@@ -11,11 +11,12 @@ A high-performance molecular integrals library in Rust, ported from PyQuante2.
 - Kinetic energy integrals (T)
 - Nuclear attraction integrals (V)
 
-**Two-Electron Repulsion Integrals** - Four methods:
+**Two-Electron Repulsion Integrals** - Five methods:
 1. **HGP Optimized (Flat Array)** - 🏆 **FASTEST METHOD** - 2x faster than Standard, 1.8x faster than Rys! ✨✨✨
-2. **Rys Quadrature** - Second fastest, good for high angular momentum
-3. **Standard THO Method** - Solid reference implementation
-4. **Head-Gordon-Pople Original** - Deprecated (7x slower than HGP-Opt)
+2. **HGP SIMD (Opt-in)** - SIMD-vectorized VRR (requires `--features simd` and nightly Rust, ~equal performance on ARM)
+3. **Rys Quadrature** - Second fastest, good for high angular momentum
+4. **Standard THO Method** - Solid reference implementation
+5. **Head-Gordon-Pople Original** - Deprecated (7x slower than HGP-Opt)
 
 **Parallel Computation** (NEW!)
 - Multithreaded ERI computation using Rayon
@@ -52,6 +53,7 @@ All tests verified against PyQuante2 reference values (1e-5 precision).
 | Method | Approach | Performance on Benzene | Status |
 |--------|----------|----------------------|---------|
 | **HGP Opt (Flat Array)** | Optimized HRR/VRR + flat array | **815 ms** | 🏆 **FASTEST - Use this!** |
+| **HGP SIMD** | SIMD-vectorized VRR (nightly) | 1160 ms (1.42x slower on ARM) | Optional, may help on x86 |
 | **Rys** | Polynomial quadrature | 1442 ms (1.77x slower) | Second best |
 | **Standard** | THO B-array recursion | 1761 ms (2.16x slower) | Third best |
 | **HGP Original** | HRR/VRR + HashMap | 5702 ms (7x slower) | Deprecated ❌ |
@@ -66,6 +68,15 @@ All tests verified against PyQuante2 reference values (1e-5 precision).
 - **H2O (7 basis fns)**: 1.35 ms
 - 7x total improvement over original HGP
 - See `FLAT_ARRAY_RESULTS.md` and `HGP_HASHMAP_ALTS.md` for details
+
+**HGP-SIMD (Opt-in):**
+- SIMD vectorization of VRR innermost loops using `std::simd`
+- **Benzene**: 1160 ms (1.42x slower than scalar on ARM)
+- **Build with**: `cargo +nightly build --release --features simd`
+- **Disabled by default** to avoid requiring nightly Rust
+- May perform better on x86_64 with AVX2 (untested)
+- Use with `ERIMethod::HeadGordonPopleSimd`
+- See `SIMD_RESULTS.md` and `PROFILING.md` for details
 
 **Rys Quadrature:** (Second best)
 - Numerical quadrature with polynomial roots
@@ -96,6 +107,7 @@ rmolints/
 │   ├── rys.rs            # Rys quadrature ERIs
 │   ├── hgp.rs            # Head-Gordon-Pople ERIs (original)
 │   ├── hgp_opt.rs        # Head-Gordon-Pople ERIs (optimized) ✨
+│   ├── hgp_simd.rs       # Head-Gordon-Pople ERIs (SIMD) 🚀
 │   ├── parallel.rs       # Parallel integral computation (Rayon)
 │   └── boys.rs           # Placeholder (consolidated in utils)
 ├── reference/
@@ -104,6 +116,31 @@ rmolints/
 │   ├── rys.py            # PyQuante2 reference (1516 lines)
 │   └── hgp.py            # PyQuante2 reference
 └── PROGRESS.md           # Detailed progress tracking
+```
+
+## Building
+
+### Standard Build (Stable Rust)
+```bash
+# Default build - uses HGP-Opt (fastest method)
+cargo build --release
+
+# Run tests
+cargo test --release
+
+# Run benchmarks
+cargo run --release --example molecule_benchmark
+```
+
+### With SIMD (Nightly Rust Required)
+```bash
+# Build with SIMD support
+cargo +nightly build --release --features simd
+
+# Run SIMD-specific benchmarks
+cargo +nightly run --release --features simd --example simd_benchmark
+
+# Note: SIMD is ~equal or slower on ARM, may help on x86_64
 ```
 
 ## Usage Example
@@ -163,10 +200,10 @@ let eris = compute_eri_tensor_parallel(&basis, ERIMethod::Standard);
 5. ✅ **HGP Optimization Round 2** - DONE: 2.4x additional speedup (flat array), see FLAT_ARRAY_RESULTS.md
 6. ✅ **Boundary Bug Fixes** - DONE: Fixed VRR recursion bugs in both HGP methods
 7. ✅ **HashMap Alternatives Study** - DONE: Comprehensive analysis in HGP_HASHMAP_ALTS.md
+8. ✅ **SIMD Optimizations** - DONE: Implemented but limited gains on ARM (see SIMD_RESULTS.md)
+9. ✅ **Profile HGP-Opt** - DONE: VRR stages 6-7 dominate (75-85% of time, see PROFILING.md)
 
 ### High Priority (Performance)
-8. **SIMD Optimizations** - Vectorize VRR/HRR loops (potential 2-4x speedup)
-9. **Profile HGP-Opt** - Find next bottleneck (likely HRR recursion)
 10. **Larger Basis Sets** - Implement 6-31G, 6-31G*, cc-pVDZ
 11. **More Elements** - Extend STO-3G beyond H, C, N, O
 

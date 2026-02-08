@@ -7,11 +7,16 @@ description = "Optimized molecular integrals library in Rust"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/rpmuller/rmolints"
 
+[features]
+default = []
+simd = []
+
 [dependencies]
 rayon = "1.10"
 
 [dev-dependencies]
 approx = "0.5"
+pprof = { version = "0.13", features = ["flamegraph", "criterion"] }
 
 [profile.release]
 opt-level = 3

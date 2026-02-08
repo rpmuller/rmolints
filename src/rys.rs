@@ -11,6 +11,36 @@ use crate::common::{CGBF, Vec3};
 use crate::utils::{gaussian_normalization, gaussian_product_center};
 use std::f64::consts::PI;
 
+/// Flat array storage for G matrix to avoid nested Vec allocations
+/// Stores G[n][m] in row-major order: index = n * (m_max + 1) + m
+struct GMatrix {
+    data: Vec<f64>,
+    m_max: usize,
+}
+
+impl GMatrix {
+    fn new(n_max: usize, m_max: usize) -> Self {
+        GMatrix {
+            data: vec![0.0; (n_max + 1) * (m_max + 1)],
+            m_max,
+        }
+    }
+
+    #[inline(always)]
+    fn get(&self, n: usize, m: usize) -> f64 {
+        self.data[n * (self.m_max + 1) + m]
+    }
+
+    #[inline(always)]
+    fn set(&mut self, n: usize, m: usize, val: f64) {
+        self.data[n * (self.m_max + 1) + m] = val;
+    }
+
+    fn clear(&mut self) {
+        self.data.fill(0.0);
+    }
+}
+
 /// Compute two-electron repulsion integral using Rys quadrature
 ///
 /// The electron repulsion integral is: (ij|kl) = ⟨φ_i φ_j|1/r₁₂|φ_k φ_l⟩
@@ -111,12 +141,16 @@ fn coulomb_repulsion_rys(
     let (roots, weights) = rys_roots(norder, x_rys);
 
     // Sum over quadrature points
+    // Pass pre-computed values to avoid recomputation in int_1d
     let mut sum = 0.0;
     for i in 0..roots.len() {
         let t = roots[i];
-        let ix = int_1d(t, la, lb, lc, ld, a.x, b.x, c.x, d.x, alpha_a, alpha_b, alpha_c, alpha_d);
-        let iy = int_1d(t, ma, mb, mc, md, a.y, b.y, c.y, d.y, alpha_a, alpha_b, alpha_c, alpha_d);
-        let iz = int_1d(t, na, nb, nc, nd, a.z, b.z, c.z, d.z, alpha_a, alpha_b, alpha_c, alpha_d);
+        let ix = int_1d(t, la, lb, lc, ld, a.x, b.x, c.x, d.x,
+                       px, qx, gamma_ab, gamma_cd, alpha_a, alpha_b, alpha_c, alpha_d);
+        let iy = int_1d(t, ma, mb, mc, md, a.y, b.y, c.y, d.y,
+                       py, qy, gamma_ab, gamma_cd, alpha_a, alpha_b, alpha_c, alpha_d);
+        let iz = int_1d(t, na, nb, nc, nd, a.z, b.z, c.z, d.z,
+                       pz, qz, gamma_ab, gamma_cd, alpha_a, alpha_b, alpha_c, alpha_d);
         sum += ix * iy * iz * weights[i]; // ABD eq 5 & 9
     }
 
@@ -126,6 +160,7 @@ fn coulomb_repulsion_rys(
 /// One-dimensional integral using Rys quadrature
 ///
 /// Computes the one-dimensional component of the ERI at Rys quadrature point t
+/// Takes pre-computed product centers and gamma values to avoid redundant computation
 #[allow(clippy::too_many_arguments)]
 fn int_1d(
     t: f64,
@@ -137,16 +172,16 @@ fn int_1d(
     b: f64,
     c: f64,
     d: f64,
+    p: f64,        // Pre-computed product center
+    q: f64,        // Pre-computed product center
+    gamma_ab: f64, // Pre-computed composite exponent
+    gamma_cd: f64, // Pre-computed composite exponent
     alpha_a: f64,
     alpha_b: f64,
     alpha_c: f64,
     alpha_d: f64,
 ) -> f64 {
-    let gamma_ab = alpha_a + alpha_b;
-    let gamma_cd = alpha_c + alpha_d;
-
-    let p = gaussian_product_center(alpha_a, a, alpha_b, b);
-    let q = gaussian_product_center(alpha_c, c, alpha_d, d);
+    // Use pre-computed values instead of recalculating
 
     // Compute recursion factors using Gamess formulation
     let fact = t / (gamma_ab + gamma_cd) / (1.0 + t);
@@ -154,8 +189,14 @@ fn int_1d(
     let b1 = 1.0 / (2.0 * gamma_ab * (1.0 + t)) + 0.5 * fact;
     let b1p = 1.0 / (2.0 * gamma_cd * (1.0 + t)) + 0.5 * fact;
 
+    // Allocate G matrix (will be reused across x, y, z by caller in future optimization)
+    let n = (l1 + l2) as usize;
+    let m = (l3 + l4) as usize;
+    let mut g = GMatrix::new(n, m);
+
     // Generate intermediate values using recursion
-    let g = recur(l1, l2, l3, l4, p, a, b, q, c, d, b00, b1, b1p, alpha_a, alpha_b, alpha_c, alpha_d, gamma_ab, gamma_cd);
+    recur(&mut g, l1, l2, l3, l4, p, a, b, q, c, d, b00, b1, b1p,
+          alpha_a, alpha_b, alpha_c, alpha_d, gamma_ab, gamma_cd);
 
     // Shift to final integral value
     shift(l1, l2, l3, l4, p, a, b, q, c, d, &g)
@@ -164,8 +205,10 @@ fn int_1d(
 /// Generate intermediate G values using recursion relations
 ///
 /// Implements ABD equations 11, 15-16 using Gamess formulation
+/// Uses pre-allocated GMatrix to avoid repeated allocations
 #[allow(clippy::too_many_arguments)]
 fn recur(
+    g: &mut GMatrix,
     l1: i32,
     l2: i32,
     l3: i32,
@@ -185,21 +228,22 @@ fn recur(
     alpha_d: f64,
     gamma_ab: f64,
     gamma_cd: f64,
-) -> Vec<Vec<f64>> {
+) {
     let n = (l1 + l2) as usize;
     let m = (l3 + l4) as usize;
 
-    // Initialize G array
-    let mut g = vec![vec![0.0; m + 1]; n + 1];
+    // Clear array for reuse
+    g.clear();
 
     // Base case G[0,0] (ABD eq 11)
     // Includes Gaussian overlap exp(-alpha*beta*(r_ab)^2 / (alpha+beta))
     let rab2 = (a - b).powi(2);
     let rcd2 = (c - d).powi(2);
-    g[0][0] = PI
+    let g00 = PI
         * ((-alpha_a * alpha_b * rab2 / gamma_ab).exp())
         * ((-alpha_c * alpha_d * rcd2 / gamma_cd).exp())
         / (gamma_ab * gamma_cd).sqrt();
+    g.set(0, 0, g00);
 
     // Compute recursion coefficients using differences
     let c_coef = p - a;
@@ -207,40 +251,40 @@ fn recur(
 
     // ABD eq 15: First recursion
     if n > 0 {
-        g[1][0] = c_coef * g[0][0];
+        g.set(1, 0, c_coef * g.get(0, 0));
     }
     if m > 0 {
-        g[0][1] = cp_coef * g[0][0];
+        g.set(0, 1, cp_coef * g.get(0, 0));
     }
 
     // Build up G array using recursion
     for idx_n in 2..=n {
-        g[idx_n][0] = b1 * (idx_n - 1) as f64 * g[idx_n - 2][0] + c_coef * g[idx_n - 1][0];
+        let val = b1 * (idx_n - 1) as f64 * g.get(idx_n - 2, 0) + c_coef * g.get(idx_n - 1, 0);
+        g.set(idx_n, 0, val);
     }
 
     for idx_m in 2..=m {
-        g[0][idx_m] = b1p * (idx_m - 1) as f64 * g[0][idx_m - 2] + cp_coef * g[0][idx_m - 1];
+        let val = b1p * (idx_m - 1) as f64 * g.get(0, idx_m - 2) + cp_coef * g.get(0, idx_m - 1);
+        g.set(0, idx_m, val);
     }
 
     // Fill in the rest of the G array with proper boundary conditions
     for idx_n in 1..=n {
         for idx_m in 1..=m {
-            let mut val = c_coef * g[idx_n - 1][idx_m]
-                + cp_coef * g[idx_n][idx_m - 1]
-                + b00 * idx_n as f64 * g[idx_n - 1][idx_m - 1];
+            let mut val = c_coef * g.get(idx_n - 1, idx_m)
+                + cp_coef * g.get(idx_n, idx_m - 1)
+                + b00 * idx_n as f64 * g.get(idx_n - 1, idx_m - 1);
 
             if idx_n >= 2 {
-                val += b1 * (idx_n - 1) as f64 * g[idx_n - 2][idx_m];
+                val += b1 * (idx_n - 1) as f64 * g.get(idx_n - 2, idx_m);
             }
             if idx_m >= 2 {
-                val += b1p * (idx_m - 1) as f64 * g[idx_n][idx_m - 2];
+                val += b1p * (idx_m - 1) as f64 * g.get(idx_n, idx_m - 2);
             }
 
-            g[idx_n][idx_m] = val;
+            g.set(idx_n, idx_m, val);
         }
     }
-
-    g
 }
 
 /// Shift intermediate values to final integral
@@ -257,7 +301,7 @@ fn shift(
     _q: f64,
     c: f64,
     d: f64,
-    g: &[Vec<f64>],
+    g: &GMatrix,
 ) -> f64 {
     use crate::utils::binomial;
 
@@ -276,9 +320,8 @@ fn shift(
             let n_idx = (n + i) as usize;
             let m_idx = (m + k) as usize;
 
-            if n_idx < g.len() && m_idx < g[n_idx].len() {
-                ijm0 += binomial(j, n) * xij.powi(j - n) * g[n_idx][m_idx];
-            }
+            // GMatrix bounds are implicit in the allocation
+            ijm0 += binomial(j, n) * xij.powi(j - n) * g.get(n_idx, m_idx);
         }
 
         // I(i,j,k,l) <- I(i,j,m,0)

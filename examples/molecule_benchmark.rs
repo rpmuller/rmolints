@@ -44,6 +44,8 @@ fn main() {
         ("Rys Quadrature", ERIMethod::Rys),
         ("Head-Gordon-Pople", ERIMethod::HeadGordonPople),
         ("HGP Optimized", ERIMethod::HeadGordonPopleOpt),
+        #[cfg(feature = "simd")]
+        ("HGP SIMD", ERIMethod::HeadGordonPopleSimd),
     ];
 
     for (method_name, method) in &methods {
