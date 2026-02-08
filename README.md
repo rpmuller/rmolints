@@ -184,9 +184,12 @@ let eris = compute_eri_tensor_parallel(&basis, ERIMethod::Standard);
 ## References
 
 - **PyQuante2**: https://github.com/rpmuller/pyquante2
-- **THO**: Taketa, Huzinaga, O-ohata equations
-- **Rys**: Augspurger, Bernholdt, Dykstra, J. Comp. Chem. 11(8), 972-977 (1990)
-- **HGP**: Head-Gordon & Pople / Saika & Obara scheme
+- **THO**: [Gaussian-Expansion Methods for Molecular Integrals](https://journals.jps.jp/doi/abs/10.1143/JPSJ.21.2313?journalCode=jpsj). Hiroshi Taketa1, Sigeru Huzinaga, and Kiyosi O-ohata. Journal of the Physics Society of Japan, 21, 2313 (1966).
+- **Rys**: Augspurger, Bernholdt, Dykstra, [Concise, open‐ended implementation of Rys polynomial evaluation of two‐Electron integrals](https://onlinelibrary.wiley.com/doi/abs/10.1002/jcc.540110809), J. Comp. Chem. 11(8), 972-977 (1990).
+- **HGP**: 
+  - [A method for two‐electron Gaussian integral and integral derivative evaluation using recurrence relations.](https://pubs.aip.org/aip/jcp/article-abstract/89/9/5777/220762/A-method-for-two-electron-Gaussian-integral-and?redirectedFrom=fulltext). Martin Head-Gordon and John A. Pople. JCP, 89 (9), 5777, 1988.
+  - Molecular Integrals Over Gaussian Basis Functions. Peter M. W. Gill. Adv. Q. Chem., 25, 141 (1994). 
+  - The Prism Algorithm for Two-Electron Integrals. Peter M. W. Gill and John A. Pople. IJQC, 40, 753 (1991).
 
 ## License
 
