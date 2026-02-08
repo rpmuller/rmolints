@@ -1,0 +1,19 @@
+[package]
+name = "rmolints"
+version = "0.1.0"
+edition = "2021"
+authors = ["Rick Muller <rmuller@users.noreply.github.com>"]
+description = "Optimized molecular integrals library in Rust"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/rpmuller/rmolints"
+
+[dependencies]
+rayon = "1.10"
+
+[dev-dependencies]
+approx = "0.5"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

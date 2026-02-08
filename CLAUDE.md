@@ -16,3 +16,7 @@ The Python code typically has doctests that show how the code is called and dete
 
 ## Boys integrals
 - There is a working Rust implementation of the Boys integral, which is used in the Head-Gordon and Pople implementations, in the https://github.com/rpmuller/boys repository.
+
+## Tools
+- rust/rustup/cargo are installed
+- Use uv to manage any python environments.
