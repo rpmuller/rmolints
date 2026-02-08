@@ -22,6 +22,8 @@ pub mod hgp_opt;
 pub mod parallel;
 pub mod boys;
 pub mod utils;
+pub mod molecule;
+pub mod basis;
 
 /// Common types and utilities used across modules
 pub mod common {
