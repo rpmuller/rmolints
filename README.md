@@ -11,10 +11,11 @@ A high-performance molecular integrals library in Rust, ported from PyQuante2.
 - Kinetic energy integrals (T)
 - Nuclear attraction integrals (V)
 
-**Two-Electron Repulsion Integrals** - Three methods:
-1. **Standard THO Method** - Reference implementation
-2. **Rys Quadrature** - Optimized for higher angular momentum
-3. **Head-Gordon-Pople** - Efficient HRR/VRR recursion
+**Two-Electron Repulsion Integrals** - Four methods:
+1. **Standard THO Method** - Reference implementation, best general-purpose
+2. **Rys Quadrature** - Optimized for higher angular momentum (L ≥ 3)
+3. **Head-Gordon-Pople** - Original HRR/VRR recursion
+4. **HGP Optimized** - 2-8.5x faster than original HGP ✨
 
 **Parallel Computation** (NEW!)
 - Multithreaded ERI computation using Rayon
@@ -30,7 +31,7 @@ A high-performance molecular integrals library in Rust, ported from PyQuante2.
 ## Test Results
 
 ```
-✅ 39/39 tests passing (100%)
+✅ 42/42 tests passing (100%)
 
 Breakdown:
   - Utility functions:        11 tests
@@ -38,6 +39,7 @@ Breakdown:
   - Two-electron (standard):   7 tests
   - Rys quadrature:            3 tests
   - Head-Gordon-Pople:         3 tests
+  - HGP Optimized:             3 tests
   - Parallel computation:      7 tests
   - Common types:              1 test
 ```
@@ -46,30 +48,39 @@ All tests verified against PyQuante2 reference values (1e-5 precision).
 
 ## Algorithm Comparison
 
-| Method | Approach | Best For | Implementation |
-|--------|----------|----------|----------------|
-| **Standard** | THO B-array recursion | Reference/validation | Complete |
-| **Rys** | Polynomial quadrature | High angular momentum | Core algorithm complete |
-| **HGP** | HRR/VRR recursion | Medium-high L, memory efficient | Complete |
+| Method | Approach | Best For | Performance |
+|--------|----------|----------|-------------|
+| **Standard** | THO B-array recursion | General-purpose (L ≤ 2) | Best for s,p orbitals |
+| **Rys** | Polynomial quadrature | High L (L ≥ 3) | 33% faster at L=4 |
+| **HGP** | HRR/VRR recursion | Academic comparison | Original: too slow ❌ |
+| **HGP Opt** | Optimized HRR/VRR | Academic comparison | 2-8.5x faster than HGP ✅ |
 
 ## Performance Characteristics
 
 **Standard Method:**
 - Clear algorithm, easy to understand
 - Uses F_γ incomplete gamma function
-- Good for low angular momentum
+- **Best for s, p orbitals** (L ≤ 2)
+- Consistent performance across all cases
 
 **Rys Quadrature:**
 - Numerical quadrature with polynomial roots
 - Avoids repeated F_γ evaluations
-- Scales well with angular momentum
+- **Best for d, f, g orbitals** (L ≥ 3)
+- 33% faster than Standard at L=4
 - Full accuracy requires ~1500 lines of polynomial coefficients (simplified version implemented)
 
-**Head-Gordon-Pople:**
-- Horizontal recursion transfers angular momentum
-- Vertical recursion builds from Boys function
-- Memory efficient (uses HashMap caching)
-- Excellent for d, f orbitals
+**Head-Gordon-Pople (Original):**
+- HashMap allocation overhead
+- Very slow for p/d orbitals (13x slower than Standard)
+- **Not recommended** - use HGP Optimized instead
+
+**Head-Gordon-Pople (Optimized):** ✨
+- Pre-computes VRR tensor once per primitive quartet
+- Vec-based indexing (much faster than HashMap)
+- **2-8.5x faster** than original HGP
+- Still slower than Standard/Rys for most cases
+- See `HGP_OPTIMIZATION.md` for details
 
 ## Project Structure
 
@@ -81,7 +92,8 @@ rmolints/
 │   ├── one_electron.rs   # One-electron integrals
 │   ├── two_electron.rs   # Standard ERIs
 │   ├── rys.rs            # Rys quadrature ERIs
-│   ├── hgp.rs            # Head-Gordon-Pople ERIs
+│   ├── hgp.rs            # Head-Gordon-Pople ERIs (original)
+│   ├── hgp_opt.rs        # Head-Gordon-Pople ERIs (optimized) ✨
 │   ├── parallel.rs       # Parallel integral computation (Rayon)
 │   └── boys.rs           # Placeholder (consolidated in utils)
 ├── reference/
@@ -129,23 +141,25 @@ let eris = compute_eri_tensor_parallel(&basis, ERIMethod::Standard);
 ## Key Achievements
 
 1. **Complete integral library** - All fundamental one- and two-electron integrals
-2. **Multiple algorithms** - Three different ERI methods for flexibility
+2. **Multiple algorithms** - Four different ERI methods for flexibility
 3. **High accuracy** - Matches PyQuante2 to 1e-5 precision
-4. **Well-tested** - 39 comprehensive tests covering all modules
+4. **Well-tested** - 42 comprehensive tests covering all modules
 5. **Clean implementation** - Idiomatic Rust with proper type safety
 6. **Optimized** - Release builds with LTO, opt-level 3
 7. **Parallel computation** - Multithreaded ERI evaluation using Rayon
+8. **HGP optimization** - 2-8.5x speedup through careful memory layout ✨
 
 ## Next Steps (Optional Enhancements)
 
 1. ✅ **Performance Benchmarking** - DONE: See BENCHMARK_RESULTS.md
-2. **Full Rys Coefficients** - Add complete polynomial tables (1500+ lines)
-3. **SIMD Optimizations** - Vectorize hot paths
-4. ✅ **Parallel Computation** - DONE: Rayon-based multithreading in parallel.rs
-5. **Higher Angular Momentum** - Test with f, g orbitals
-6. **Python Bindings** - PyO3 wrapper for Python interop
-7. **Real Molecules** - Integration tests (H₂, H₂O, benzene)
-8. **Advanced Parallel** - Nested parallelism, GPU offload, integral screening
+2. ✅ **Parallel Computation** - DONE: Rayon-based multithreading in parallel.rs
+3. ✅ **HGP Optimization** - DONE: 2-8.5x speedup, see HGP_OPTIMIZATION.md
+4. **Full Rys Coefficients** - Add complete polynomial tables (1500+ lines)
+5. **SIMD Optimizations** - Vectorize hot paths (potential 2-4x speedup)
+6. **Higher Angular Momentum** - Test with f, g orbitals
+7. **Python Bindings** - PyO3 wrapper for Python interop
+8. **Real Molecules** - Integration tests (H₂, H₂O, benzene)
+9. **Integral Screening** - Skip near-zero integrals for large molecules
 
 ## References
 
