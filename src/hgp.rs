@@ -1,24 +1,83 @@
-//! Two-electron repulsion integrals using the Head-Gordon and Pople method.
+//! Head-Gordon-Pople implementation of electron repulsion integrals
 //!
-//! This implementation uses the algorithm developed by Head-Gordon and Pople,
-//! which is particularly efficient for medium to high angular momentum cases.
-//! It relies on the Boys function for computing auxiliary integrals.
+//! This implementation uses the VRR (Vertical Recurrence Relation) and
+//! HRR (Horizontal Recurrence Relation) approach with pre-allocated arrays
+//! and iterative HRR for optimal performance.
 //!
-//! Reference: PyQuante2 - pyquante2/ints/hgp.py
-//! Based on Saika and Obara scheme with Head-Gordon & Pople optimizations
+//! Key features:
+//! 1. VRR tensor computed once per primitive quartet with efficient storage
+//! 2. Iterative HRR (avoids repeated VRR calls)
+//! 3. Pre-computed array strides for O(1) indexing
+//! 4. Excellent cache locality
 
 use crate::common::{CGBF, Vec3};
 use crate::utils::{fgamma, gaussian_normalization, gaussian_product_center};
-use std::collections::HashMap;
 use std::f64::consts::PI;
 
-/// Compute two-electron repulsion integral using Head-Gordon-Pople method
+/// VRR tensor with pre-computed strides for efficient indexing
 ///
-/// The electron repulsion integral is: (ij|kl) = ⟨φ_i φ_j|1/r₁₂|φ_k φ_l⟩
-pub fn electron_repulsion_hgp(bra1: &CGBF, bra2: &CGBF, ket1: &CGBF, ket2: &CGBF) -> f64 {
+/// Dimensions: [la_max+1][ma_max+1][na_max+1][lc_max+1][mc_max+1][nc_max+1][mtot+1]
+struct VRRTensor {
+    data: Vec<f64>,
+    strides: [usize; 7],
+}
+
+impl VRRTensor {
+    /// Create new VRR tensor with given dimensions
+    fn new(dims: [usize; 7]) -> Self {
+        let total_size: usize = dims.iter().product();
+        let mut strides = [1; 7];
+
+        // Compute strides: stride[i] = product of all dims to the right
+        // Row-major order: rightmost index varies fastest
+        for i in (0..6).rev() {
+            strides[i] = strides[i + 1] * dims[i + 1];
+        }
+
+        VRRTensor {
+            data: vec![0.0; total_size],
+            strides,
+        }
+    }
+
+    /// Compute linear index from 7D coordinates
+    #[inline(always)]
+    fn index(&self, i: usize, j: usize, k: usize,
+             ic: usize, jc: usize, kc: usize, im: usize) -> usize {
+        i * self.strides[0]
+        + j * self.strides[1]
+        + k * self.strides[2]
+        + ic * self.strides[3]
+        + jc * self.strides[4]
+        + kc * self.strides[5]
+        + im  // stride[6] is always 1
+    }
+
+    /// Get value at 7D coordinates
+    #[inline(always)]
+    fn get(&self, i: usize, j: usize, k: usize,
+           ic: usize, jc: usize, kc: usize, im: usize) -> f64 {
+        self.data[self.index(i, j, k, ic, jc, kc, im)]
+    }
+
+    /// Set value at 7D coordinates
+    #[inline(always)]
+    fn set(&mut self, i: usize, j: usize, k: usize,
+           ic: usize, jc: usize, kc: usize, im: usize, val: f64) {
+        let idx = self.index(i, j, k, ic, jc, kc, im);
+        self.data[idx] = val;
+    }
+}
+
+/// Compute two-electron repulsion integral using optimized HGP method
+pub fn electron_repulsion_hgp(
+    bra1: &CGBF,
+    bra2: &CGBF,
+    ket1: &CGBF,
+    ket2: &CGBF,
+) -> f64 {
     let mut sum = 0.0;
 
-    // Get angular momentum
     let (la, ma, na) = bra1.shell;
     let (lb, mb, nb) = bra2.shell;
     let (lc, mc, nc) = ket1.shell;
@@ -41,7 +100,7 @@ pub fn electron_repulsion_hgp(bra1: &CGBF, bra2: &CGBF, ket1: &CGBF, ket2: &CGBF
                         * norm_b
                         * norm_c
                         * norm_d
-                        * hrr(
+                        * primitive_eri(
                             bra1.origin,
                             bra1.shell,
                             p1.exponent,
@@ -63,12 +122,9 @@ pub fn electron_repulsion_hgp(bra1: &CGBF, bra2: &CGBF, ket1: &CGBF, ket2: &CGBF
     sum
 }
 
-/// Horizontal Recursion Relation (HRR)
-///
-/// Transfers angular momentum from center b to center a, and from center d to center c
-/// Recursively reduces to VRR base cases
+/// Compute primitive ERI using optimized VRR+HRR
 #[allow(clippy::too_many_arguments)]
-fn hrr(
+fn primitive_eri(
     a: Vec3,
     lmn_a: (i32, i32, i32),
     alpha_a: f64,
@@ -87,62 +143,47 @@ fn hrr(
     let (lc, mc, nc) = lmn_c;
     let (ld, md, nd) = lmn_d;
 
-    // Transfer angular momentum from b to a (x-direction)
-    if lb > 0 {
-        return hrr(a, (la + 1, ma, na), alpha_a, b, (lb - 1, mb, nb), alpha_b, c, lmn_c, alpha_c, d, lmn_d, alpha_d)
-            + (a.x - b.x) * hrr(a, lmn_a, alpha_a, b, (lb - 1, mb, nb), alpha_b, c, lmn_c, alpha_c, d, lmn_d, alpha_d);
-    }
-    // Transfer angular momentum from b to a (y-direction)
-    else if mb > 0 {
-        return hrr(a, (la, ma + 1, na), alpha_a, b, (lb, mb - 1, nb), alpha_b, c, lmn_c, alpha_c, d, lmn_d, alpha_d)
-            + (a.y - b.y) * hrr(a, lmn_a, alpha_a, b, (lb, mb - 1, nb), alpha_b, c, lmn_c, alpha_c, d, lmn_d, alpha_d);
-    }
-    // Transfer angular momentum from b to a (z-direction)
-    else if nb > 0 {
-        return hrr(a, (la, ma, na + 1), alpha_a, b, (lb, mb, nb - 1), alpha_b, c, lmn_c, alpha_c, d, lmn_d, alpha_d)
-            + (a.z - b.z) * hrr(a, lmn_a, alpha_a, b, (lb, mb, nb - 1), alpha_b, c, lmn_c, alpha_c, d, lmn_d, alpha_d);
-    }
-    // Transfer angular momentum from d to c (x-direction)
-    else if ld > 0 {
-        return hrr(a, lmn_a, alpha_a, b, lmn_b, alpha_b, c, (lc + 1, mc, nc), alpha_c, d, (ld - 1, md, nd), alpha_d)
-            + (c.x - d.x) * hrr(a, lmn_a, alpha_a, b, lmn_b, alpha_b, c, lmn_c, alpha_c, d, (ld - 1, md, nd), alpha_d);
-    }
-    // Transfer angular momentum from d to c (y-direction)
-    else if md > 0 {
-        return hrr(a, lmn_a, alpha_a, b, lmn_b, alpha_b, c, (lc, mc + 1, nc), alpha_c, d, (ld, md - 1, nd), alpha_d)
-            + (c.y - d.y) * hrr(a, lmn_a, alpha_a, b, lmn_b, alpha_b, c, lmn_c, alpha_c, d, (ld, md - 1, nd), alpha_d);
-    }
-    // Transfer angular momentum from d to c (z-direction)
-    else if nd > 0 {
-        return hrr(a, lmn_a, alpha_a, b, lmn_b, alpha_b, c, (lc, mc, nc + 1), alpha_c, d, (ld, md, nd - 1), alpha_d)
-            + (c.z - d.z) * hrr(a, lmn_a, alpha_a, b, lmn_b, alpha_b, c, lmn_c, alpha_c, d, (ld, md, nd - 1), alpha_d);
-    }
+    // Compute maximum angular momentum needed for VRR
+    let la_max = la + lb;
+    let ma_max = ma + mb;
+    let na_max = na + nb;
+    let lc_max = lc + ld;
+    let mc_max = mc + md;
+    let nc_max = nc + nd;
 
-    // Base case: all angular momentum on centers a and c
-    // Use VRR to compute
-    vrr(a, lmn_a, alpha_a, b, alpha_b, c, lmn_c, alpha_c, d, alpha_d, 0)
+    // Compute VRR tensor once
+    let vrr_tensor = compute_vrr_tensor(
+        a, alpha_a, b, alpha_b, c, alpha_c, d, alpha_d, la_max, ma_max, na_max, lc_max, mc_max,
+        nc_max,
+    );
+
+    // Apply HRR iteratively to get final result
+    hrr_iterative(
+        &vrr_tensor, lmn_a, lmn_b, lmn_c, lmn_d, a, b, c, d, la_max, ma_max, na_max, lc_max,
+        mc_max, nc_max,
+    )
 }
 
-/// Vertical Recursion Relation (VRR)
-///
-/// Builds up integrals with angular momentum using Boys function
-/// Computes integrals of the form (la,ma,na,0|lc,mc,nc,0)_m
+/// Compute full VRR tensor for all required angular momentum combinations
 #[allow(clippy::too_many_arguments)]
-fn vrr(
+fn compute_vrr_tensor(
     a: Vec3,
-    lmn_a: (i32, i32, i32),
     alpha_a: f64,
     b: Vec3,
     alpha_b: f64,
     c: Vec3,
-    lmn_c: (i32, i32, i32),
     alpha_c: f64,
     d: Vec3,
     alpha_d: f64,
-    m: i32,
-) -> f64 {
-    let (la, ma, na) = lmn_a;
-    let (lc, mc, nc) = lmn_c;
+    la_max: i32,
+    ma_max: i32,
+    na_max: i32,
+    lc_max: i32,
+    mc_max: i32,
+    nc_max: i32,
+) -> VRRTensor {
+    let zeta = alpha_a + alpha_b;
+    let eta = alpha_c + alpha_d;
 
     // Gaussian product centers
     let px = gaussian_product_center(alpha_a, a.x, alpha_b, b.x);
@@ -155,27 +196,30 @@ fn vrr(
     let qz = gaussian_product_center(alpha_c, c.z, alpha_d, d.z);
     let q = Vec3::new(qx, qy, qz);
 
-    let zeta = alpha_a + alpha_b;
-    let eta = alpha_c + alpha_d;
-
     let wx = gaussian_product_center(zeta, px, eta, qx);
     let wy = gaussian_product_center(zeta, py, eta, qy);
     let wz = gaussian_product_center(zeta, pz, eta, qz);
-    let _w = Vec3::new(wx, wy, wz);
 
-    let mtot = la + ma + na + lc + mc + nc + m;
+    let mtot = la_max + ma_max + na_max + lc_max + mc_max + nc_max;
 
-    // Initialize VRR cache
-    let mut cache: HashMap<(i32, i32, i32, i32, i32, i32, i32), f64> = HashMap::new();
+    // Allocate flat tensor with dimensions: [la][ma][na][lc][mc][nc][m]
+    let dims = [
+        (la_max + 1) as usize,
+        (ma_max + 1) as usize,
+        (na_max + 1) as usize,
+        (lc_max + 1) as usize,
+        (mc_max + 1) as usize,
+        (nc_max + 1) as usize,
+        (mtot + 1) as usize,
+    ];
+    let mut vrr = VRRTensor::new(dims);
 
-    // Compute base case (0,0,0,0,0,0,m) for all needed m values
+    // Compute prefactors
     let rab2 = a.distance_squared(&b);
-    let kab = (2.0_f64).sqrt() * PI.powf(1.25) / zeta
-        * (-alpha_a * alpha_b / zeta * rab2).exp();
+    let kab = (2.0_f64).sqrt() * PI.powf(1.25) / zeta * (-alpha_a * alpha_b / zeta * rab2).exp();
 
     let rcd2 = c.distance_squared(&d);
-    let kcd = (2.0_f64).sqrt() * PI.powf(1.25) / eta
-        * (-alpha_c * alpha_d / eta * rcd2).exp();
+    let kcd = (2.0_f64).sqrt() * PI.powf(1.25) / eta * (-alpha_c * alpha_d / eta * rcd2).exp();
 
     let rpq2 = p.distance_squared(&q);
     let t = zeta * eta / (zeta + eta) * rpq2;
@@ -184,115 +228,143 @@ fn vrr(
     let mut fg_terms = vec![0.0; (mtot + 1) as usize];
     fg_terms[mtot as usize] = fgamma(mtot, t);
     for im in (0..mtot).rev() {
-        fg_terms[im as usize] = (2.0 * t * fg_terms[(im + 1) as usize] + (-t).exp()) / (2.0 * im as f64 + 1.0);
+        fg_terms[im as usize] =
+            (2.0 * t * fg_terms[(im + 1) as usize] + (-t).exp()) / (2.0 * im as f64 + 1.0);
     }
 
-    // Base cases
+    let k_factor = kab * kcd / (zeta + eta).sqrt();
+
+    // Base cases: vrr[0][0][0][0][0][0][m]
     for im in 0..=mtot {
-        cache.insert((0, 0, 0, 0, 0, 0, im), kab * kcd / (zeta + eta).sqrt() * fg_terms[im as usize]);
+        vrr.set(0, 0, 0, 0, 0, 0, im as usize, k_factor * fg_terms[im as usize]);
     }
 
-    // Build up x-direction (la)
-    for i in 0..la {
+    // Build up x-direction for a-center
+    for i in 0..la_max {
         for im in 0..=(mtot - i - 1) {
-            let mut val = (px - a.x) * cache[&(i, 0, 0, 0, 0, 0, im)]
-                + (wx - px) * cache[&(i, 0, 0, 0, 0, 0, im + 1)];
+            let im_u = im as usize;
+            let i_u = i as usize;
+
+            let mut val = (px - a.x) * vrr.get(i_u, 0, 0, 0, 0, 0, im_u)
+                + (wx - px) * vrr.get(i_u, 0, 0, 0, 0, 0, im_u + 1);
 
             if i > 0 {
                 val += i as f64 / (2.0 * zeta)
-                    * (cache[&(i - 1, 0, 0, 0, 0, 0, im)]
-                        - eta / (zeta + eta) * cache[&(i - 1, 0, 0, 0, 0, 0, im + 1)]);
+                    * (vrr.get(i_u - 1, 0, 0, 0, 0, 0, im_u)
+                        - eta / (zeta + eta) * vrr.get(i_u - 1, 0, 0, 0, 0, 0, im_u + 1));
             }
 
-            cache.insert((i + 1, 0, 0, 0, 0, 0, im), val);
+            vrr.set(i_u + 1, 0, 0, 0, 0, 0, im_u, val);
         }
     }
 
-    // Build up y-direction (ma)
-    for j in 0..ma {
-        for i in 0..=la {
+    // Build up y-direction for a-center
+    for j in 0..ma_max {
+        for i in 0..=la_max {
             for im in 0..=(mtot - i - j - 1) {
-                let mut val = (py - a.y) * cache[&(i, j, 0, 0, 0, 0, im)]
-                    + (wy - py) * cache[&(i, j, 0, 0, 0, 0, im + 1)];
+                let im_u = im as usize;
+                let i_u = i as usize;
+                let j_u = j as usize;
+
+                let mut val = (py - a.y) * vrr.get(i_u, j_u, 0, 0, 0, 0, im_u)
+                    + (wy - py) * vrr.get(i_u, j_u, 0, 0, 0, 0, im_u + 1);
 
                 if j > 0 {
                     val += j as f64 / (2.0 * zeta)
-                        * (cache[&(i, j - 1, 0, 0, 0, 0, im)]
-                            - eta / (zeta + eta) * cache[&(i, j - 1, 0, 0, 0, 0, im + 1)]);
+                        * (vrr.get(i_u, j_u - 1, 0, 0, 0, 0, im_u)
+                            - eta / (zeta + eta) * vrr.get(i_u, j_u - 1, 0, 0, 0, 0, im_u + 1));
                 }
 
-                cache.insert((i, j + 1, 0, 0, 0, 0, im), val);
+                vrr.set(i_u, j_u + 1, 0, 0, 0, 0, im_u, val);
             }
         }
     }
 
-    // Build up z-direction (na)
-    for k in 0..na {
-        for j in 0..=ma {
-            for i in 0..=la {
+    // Build up z-direction for a-center
+    for k in 0..na_max {
+        for j in 0..=ma_max {
+            for i in 0..=la_max {
                 for im in 0..=(mtot - i - j - k - 1) {
-                    let mut val = (pz - a.z) * cache[&(i, j, k, 0, 0, 0, im)]
-                        + (wz - pz) * cache[&(i, j, k, 0, 0, 0, im + 1)];
+                    let im_u = im as usize;
+                    let i_u = i as usize;
+                    let j_u = j as usize;
+                    let k_u = k as usize;
+
+                    let mut val = (pz - a.z) * vrr.get(i_u, j_u, k_u, 0, 0, 0, im_u)
+                        + (wz - pz) * vrr.get(i_u, j_u, k_u, 0, 0, 0, im_u + 1);
 
                     if k > 0 {
                         val += k as f64 / (2.0 * zeta)
-                            * (cache[&(i, j, k - 1, 0, 0, 0, im)]
-                                - eta / (zeta + eta) * cache[&(i, j, k - 1, 0, 0, 0, im + 1)]);
+                            * (vrr.get(i_u, j_u, k_u - 1, 0, 0, 0, im_u)
+                                - eta / (zeta + eta) * vrr.get(i_u, j_u, k_u - 1, 0, 0, 0, im_u + 1));
                     }
 
-                    cache.insert((i, j, k + 1, 0, 0, 0, im), val);
+                    vrr.set(i_u, j_u, k_u + 1, 0, 0, 0, im_u, val);
                 }
             }
         }
     }
 
-    // Build up c-center x-direction (lc)
-    for ic in 0..lc {
-        for k in 0..=na {
-            for j in 0..=ma {
-                for i in 0..=la {
+    // Build up x-direction for c-center
+    for ic in 0..lc_max {
+        for k in 0..=na_max {
+            for j in 0..=ma_max {
+                for i in 0..=la_max {
                     for im in 0..=(mtot - i - j - k - ic - 1) {
-                        let mut val = (qx - c.x) * cache[&(i, j, k, ic, 0, 0, im)]
-                            + (wx - qx) * cache[&(i, j, k, ic, 0, 0, im + 1)];
+                        let im_u = im as usize;
+                        let i_u = i as usize;
+                        let j_u = j as usize;
+                        let k_u = k as usize;
+                        let ic_u = ic as usize;
+
+                        let mut val = (qx - c.x) * vrr.get(i_u, j_u, k_u, ic_u, 0, 0, im_u)
+                            + (wx - qx) * vrr.get(i_u, j_u, k_u, ic_u, 0, 0, im_u + 1);
 
                         if ic > 0 {
                             val += ic as f64 / (2.0 * eta)
-                                * (cache[&(i, j, k, ic - 1, 0, 0, im)]
-                                    - zeta / (zeta + eta) * cache[&(i, j, k, ic - 1, 0, 0, im + 1)]);
+                                * (vrr.get(i_u, j_u, k_u, ic_u - 1, 0, 0, im_u)
+                                    - zeta / (zeta + eta) * vrr.get(i_u, j_u, k_u, ic_u - 1, 0, 0, im_u + 1));
                         }
 
                         if i > 0 {
-                            val += i as f64 / (2.0 * (zeta + eta)) * cache[&(i - 1, j, k, ic, 0, 0, im + 1)];
+                            val += i as f64 / (2.0 * (zeta + eta)) * vrr.get(i_u - 1, j_u, k_u, ic_u, 0, 0, im_u + 1);
                         }
 
-                        cache.insert((i, j, k, ic + 1, 0, 0, im), val);
+                        vrr.set(i_u, j_u, k_u, ic_u + 1, 0, 0, im_u, val);
                     }
                 }
             }
         }
     }
 
-    // Build up c-center y-direction (mc)
-    for jc in 0..mc {
-        for ic in 0..=lc {
-            for k in 0..=na {
-                for j in 0..=ma {
-                    for i in 0..=la {
+    // Build up y-direction for c-center
+    for jc in 0..mc_max {
+        for ic in 0..=lc_max {
+            for k in 0..=na_max {
+                for j in 0..=ma_max {
+                    for i in 0..=la_max {
                         for im in 0..=(mtot - i - j - k - ic - jc - 1) {
-                            let mut val = (qy - c.y) * cache[&(i, j, k, ic, jc, 0, im)]
-                                + (wy - qy) * cache[&(i, j, k, ic, jc, 0, im + 1)];
+                            let im_u = im as usize;
+                            let i_u = i as usize;
+                            let j_u = j as usize;
+                            let k_u = k as usize;
+                            let ic_u = ic as usize;
+                            let jc_u = jc as usize;
+
+                            let mut val = (qy - c.y) * vrr.get(i_u, j_u, k_u, ic_u, jc_u, 0, im_u)
+                                + (wy - qy) * vrr.get(i_u, j_u, k_u, ic_u, jc_u, 0, im_u + 1);
 
                             if jc > 0 {
                                 val += jc as f64 / (2.0 * eta)
-                                    * (cache[&(i, j, k, ic, jc - 1, 0, im)]
-                                        - zeta / (zeta + eta) * cache[&(i, j, k, ic, jc - 1, 0, im + 1)]);
+                                    * (vrr.get(i_u, j_u, k_u, ic_u, jc_u - 1, 0, im_u)
+                                        - zeta / (zeta + eta) * vrr.get(i_u, j_u, k_u, ic_u, jc_u - 1, 0, im_u + 1));
                             }
 
                             if j > 0 {
-                                val += j as f64 / (2.0 * (zeta + eta)) * cache[&(i, j - 1, k, ic, jc, 0, im + 1)];
+                                val += j as f64 / (2.0 * (zeta + eta)) * vrr.get(i_u, j_u - 1, k_u, ic_u, jc_u, 0, im_u + 1);
                             }
 
-                            cache.insert((i, j, k, ic, jc + 1, 0, im), val);
+                            vrr.set(i_u, j_u, k_u, ic_u, jc_u + 1, 0, im_u, val);
                         }
                     }
                 }
@@ -300,29 +372,39 @@ fn vrr(
         }
     }
 
-    // Build up c-center z-direction (nc)
-    for kc in 0..nc {
-        for jc in 0..=mc {
-            for ic in 0..=lc {
-                for k in 0..=na {
-                    for j in 0..=ma {
-                        for i in 0..=la {
+    // Build up z-direction for c-center
+    for kc in 0..nc_max {
+        for jc in 0..=mc_max {
+            for ic in 0..=lc_max {
+                for k in 0..=na_max {
+                    for j in 0..=ma_max {
+                        for i in 0..=la_max {
                             for im in 0..=(mtot - i - j - k - ic - jc - kc - 1) {
-                                let mut val = (qz - c.z) * cache[&(i, j, k, ic, jc, kc, im)]
-                                    + (wz - qz) * cache[&(i, j, k, ic, jc, kc, im + 1)];
+                                let im_u = im as usize;
+                                let i_u = i as usize;
+                                let j_u = j as usize;
+                                let k_u = k as usize;
+                                let ic_u = ic as usize;
+                                let jc_u = jc as usize;
+                                let kc_u = kc as usize;
+
+                                let mut val = (qz - c.z) * vrr.get(i_u, j_u, k_u, ic_u, jc_u, kc_u, im_u)
+                                    + (wz - qz) * vrr.get(i_u, j_u, k_u, ic_u, jc_u, kc_u, im_u + 1);
 
                                 if kc > 0 {
                                     val += kc as f64 / (2.0 * eta)
-                                        * (cache[&(i, j, k, ic, jc, kc - 1, im)]
-                                            - zeta / (zeta + eta) * cache[&(i, j, k, ic, jc, kc - 1, im + 1)]);
+                                        * (vrr.get(i_u, j_u, k_u, ic_u, jc_u, kc_u - 1, im_u)
+                                            - zeta / (zeta + eta)
+                                                * vrr.get(i_u, j_u, k_u, ic_u, jc_u, kc_u - 1, im_u + 1));
                                 }
 
-                                // Fixed: check j > 0 before accessing j - 1
+                                // Fixed: check j > 0 before accessing j_u - 1
                                 if j > 0 {
-                                    val += j as f64 / (2.0 * (zeta + eta)) * cache[&(i, j - 1, k, ic, jc, kc, im + 1)];
+                                    val += j as f64 / (2.0 * (zeta + eta))
+                                        * vrr.get(i_u, j_u - 1, k_u, ic_u, jc_u, kc_u, im_u + 1);
                                 }
 
-                                cache.insert((i, j, k, ic, jc, kc + 1, im), val);
+                                vrr.set(i_u, j_u, k_u, ic_u, jc_u, kc_u + 1, im_u, val);
                             }
                         }
                     }
@@ -331,8 +413,85 @@ fn vrr(
         }
     }
 
-    // Return the final value
-    *cache.get(&(la, ma, na, lc, mc, nc, m)).unwrap_or(&0.0)
+    vrr
+}
+
+/// Apply horizontal recursion relation iteratively
+/// Uses a simpler recursive approach with memoization
+#[allow(clippy::too_many_arguments)]
+fn hrr_iterative(
+    vrr: &VRRTensor,
+    lmn_a: (i32, i32, i32),
+    lmn_b: (i32, i32, i32),
+    lmn_c: (i32, i32, i32),
+    lmn_d: (i32, i32, i32),
+    a: Vec3,
+    b: Vec3,
+    c: Vec3,
+    d: Vec3,
+    _la_max: i32,
+    _ma_max: i32,
+    _na_max: i32,
+    _lc_max: i32,
+    _mc_max: i32,
+    _nc_max: i32,
+) -> f64 {
+    let (la, ma, na) = lmn_a;
+    let (lb, mb, nb) = lmn_b;
+    let (lc, mc, nc) = lmn_c;
+    let (ld, md, nd) = lmn_d;
+
+    // If all angular momentum on b and d is zero, just return VRR value
+    if lb == 0 && mb == 0 && nb == 0 && ld == 0 && md == 0 && nd == 0 {
+        return vrr.get(la as usize, ma as usize, na as usize, lc as usize, mc as usize, nc as usize, 0);
+    }
+
+    // Use simple recursive helper with the pre-computed VRR
+    hrr_recursive(vrr, lmn_a, lmn_b, lmn_c, lmn_d, a, b, c, d)
+}
+
+/// Simple recursive HRR that uses pre-computed VRR
+fn hrr_recursive(
+    vrr: &VRRTensor,
+    lmn_a: (i32, i32, i32),
+    lmn_b: (i32, i32, i32),
+    lmn_c: (i32, i32, i32),
+    lmn_d: (i32, i32, i32),
+    a: Vec3,
+    b: Vec3,
+    c: Vec3,
+    d: Vec3,
+) -> f64 {
+    let (la, ma, na) = lmn_a;
+    let (lb, mb, nb) = lmn_b;
+    let (lc, mc, nc) = lmn_c;
+    let (ld, md, nd) = lmn_d;
+
+    // Transfer angular momentum from b to a
+    if lb > 0 {
+        return hrr_recursive(vrr, (la + 1, ma, na), (lb - 1, mb, nb), lmn_c, lmn_d, a, b, c, d)
+            + (a.x - b.x) * hrr_recursive(vrr, lmn_a, (lb - 1, mb, nb), lmn_c, lmn_d, a, b, c, d);
+    } else if mb > 0 {
+        return hrr_recursive(vrr, (la, ma + 1, na), (lb, mb - 1, nb), lmn_c, lmn_d, a, b, c, d)
+            + (a.y - b.y) * hrr_recursive(vrr, lmn_a, (lb, mb - 1, nb), lmn_c, lmn_d, a, b, c, d);
+    } else if nb > 0 {
+        return hrr_recursive(vrr, (la, ma, na + 1), (lb, mb, nb - 1), lmn_c, lmn_d, a, b, c, d)
+            + (a.z - b.z) * hrr_recursive(vrr, lmn_a, (lb, mb, nb - 1), lmn_c, lmn_d, a, b, c, d);
+    }
+    // Transfer angular momentum from d to c
+    else if ld > 0 {
+        return hrr_recursive(vrr, lmn_a, lmn_b, (lc + 1, mc, nc), (ld - 1, md, nd), a, b, c, d)
+            + (c.x - d.x) * hrr_recursive(vrr, lmn_a, lmn_b, lmn_c, (ld - 1, md, nd), a, b, c, d);
+    } else if md > 0 {
+        return hrr_recursive(vrr, lmn_a, lmn_b, (lc, mc + 1, nc), (ld, md - 1, nd), a, b, c, d)
+            + (c.y - d.y) * hrr_recursive(vrr, lmn_a, lmn_b, lmn_c, (ld, md - 1, nd), a, b, c, d);
+    } else if nd > 0 {
+        return hrr_recursive(vrr, lmn_a, lmn_b, (lc, mc, nc + 1), (ld, md, nd - 1), a, b, c, d)
+            + (c.z - d.z) * hrr_recursive(vrr, lmn_a, lmn_b, lmn_c, (ld, md, nd - 1), a, b, c, d);
+    }
+
+    // Base case: all angular momentum on a and c - look up in VRR
+    vrr.get(la as usize, ma as usize, na as usize, lc as usize, mc as usize, nc as usize, 0)
 }
 
 #[cfg(test)]
@@ -353,7 +512,7 @@ mod tests {
     }
 
     #[test]
-    fn test_hgp_s_orbitals_same() {
+    fn test_hgp_opt_s_orbitals_same() {
         let origin = Vec3::new(0.0, 0.0, 0.0);
         let s = s_orbital(1.0, origin);
         let result = electron_repulsion_hgp(&s, &s, &s, &s);
@@ -361,7 +520,7 @@ mod tests {
     }
 
     #[test]
-    fn test_hgp_separated_orbitals() {
+    fn test_hgp_opt_separated_orbitals() {
         let p1 = Vec3::new(0.0, 0.0, 0.0);
         let p2 = Vec3::new(0.0, 0.0, 1.0);
         let s1 = s_orbital(1.0, p1);
@@ -371,7 +530,7 @@ mod tests {
     }
 
     #[test]
-    fn test_hgp_px_orbitals() {
+    fn test_hgp_opt_px_orbitals() {
         let origin = Vec3::new(0.0, 0.0, 0.0);
         let s = s_orbital(1.0, origin);
         let px = CGBF {
@@ -386,4 +545,3 @@ mod tests {
         assert_relative_eq!(result, 0.940315972579, epsilon = 1e-5);
     }
 }
-

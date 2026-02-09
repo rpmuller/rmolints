@@ -24,27 +24,27 @@ fn benchmark(method: ERIMethod) -> f64 {
 fn main() {
     println!("\n=== Performance Ratio Analysis ===\n");
 
-    let hgp_time = benchmark(ERIMethod::HeadGordonPopleOpt);
+    let hgp_time = benchmark(ERIMethod::HeadGordonPople);
     let rys_time = benchmark(ERIMethod::Rys);
     let std_time = benchmark(ERIMethod::Standard);
 
     let ratio_rys = rys_time / hgp_time;
     let ratio_std = std_time / hgp_time;
 
-    println!("Method          | Time (ms) | Ratio to HGP-Opt");
+    println!("Method          | Time (ms) | Ratio to HGP");
     println!("{}", "-".repeat(50));
-    println!("HGP-Opt         | {:8.2}  | 1.00x (baseline)", hgp_time);
+    println!("HGP         | {:8.2}  | 1.00x (baseline)", hgp_time);
     println!("Rys (optimized) | {:8.2}  | {:.2}x slower", rys_time, ratio_rys);
     println!("Standard        | {:8.2}  | {:.2}x slower", std_time, ratio_std);
 
     println!("\n=== Comparison to README Claims ===\n");
     println!("README claimed:");
-    println!("  HGP-Opt: 815 ms");
+    println!("  HGP: 815 ms");
     println!("  Rys: 1442 ms (1.77x slower)");
     println!("  Standard: 1761 ms (2.16x slower)");
 
     println!("\nCurrent measurement:");
-    println!("  HGP-Opt: {:.0} ms ({:.2}x slower than README)", hgp_time, hgp_time / 815.0);
+    println!("  HGP: {:.0} ms ({:.2}x slower than README)", hgp_time, hgp_time / 815.0);
     println!("  Rys: {:.0} ms ({:.2}x slower)", rys_time, ratio_rys);
     println!("  Standard: {:.0} ms ({:.2}x slower)", std_time, ratio_std);
 

@@ -20,7 +20,6 @@ pub mod one_electron;
 pub mod two_electron;
 pub mod rys;
 pub mod hgp;
-pub mod hgp_opt;
 #[cfg(feature = "simd")]
 pub mod hgp_simd;
 pub mod parallel;

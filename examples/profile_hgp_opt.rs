@@ -4,8 +4,8 @@ use rmolints::parallel::{compute_eri_tensor_parallel, ERIMethod};
 use std::time::Instant;
 
 fn main() {
-    println!("\n=== HGP-Opt Profiling ===");
-    println!("Generating CPU profiling data and flamegraph for HGP-Opt implementation\n");
+    println!("\n=== HGP Profiling ===");
+    println!("Generating CPU profiling data and flamegraph for HGP implementation\n");
 
     // Use benzene as the test molecule - large enough to show bottlenecks
     // but small enough to profile in reasonable time
@@ -20,7 +20,7 @@ fn main() {
 
     // Warmup run to ensure code is compiled and caches are warm
     println!("Warmup run...");
-    let _ = compute_eri_tensor_parallel(&basis, ERIMethod::HeadGordonPopleOpt);
+    let _ = compute_eri_tensor_parallel(&basis, ERIMethod::HeadGordonPople);
 
     println!("Starting profiling run...\n");
 
@@ -31,13 +31,13 @@ fn main() {
         .build()
         .unwrap();
 
-    // Run HGP-Opt multiple times to get enough samples
+    // Run HGP multiple times to get enough samples
     let iterations = 10;
     let start = Instant::now();
 
     for i in 0..iterations {
         let iter_start = Instant::now();
-        let eris = compute_eri_tensor_parallel(&basis, ERIMethod::HeadGordonPopleOpt);
+        let eris = compute_eri_tensor_parallel(&basis, ERIMethod::HeadGordonPople);
         let iter_elapsed = iter_start.elapsed().as_secs_f64() * 1000.0;
 
         println!("Iteration {}/{}: {:.2} ms ({} ERIs computed)",

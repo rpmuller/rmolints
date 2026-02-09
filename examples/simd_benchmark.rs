@@ -1,5 +1,5 @@
 use rmolints::common::{Primitive, Vec3, CGBF};
-use rmolints::hgp_opt::electron_repulsion_hgp_opt;
+use rmolints::hgp::electron_repulsion_hgp;
 #[cfg(feature = "simd")]
 use rmolints::hgp_simd::electron_repulsion_hgp_simd;
 use std::time::Instant;
@@ -35,13 +35,13 @@ fn benchmark_orbital_combination(
 ) {
     // Warmup
     for _ in 0..100 {
-        let _ = electron_repulsion_hgp_opt(a, b, c, d);
+        let _ = electron_repulsion_hgp(a, b, c, d);
     }
 
     // Benchmark HGP-Opt (scalar)
     let start = Instant::now();
     for _ in 0..iterations {
-        let _ = electron_repulsion_hgp_opt(a, b, c, d);
+        let _ = electron_repulsion_hgp(a, b, c, d);
     }
     let scalar_time = start.elapsed().as_secs_f64() * 1_000_000.0; // microseconds
     let scalar_per_call = scalar_time / iterations as f64;

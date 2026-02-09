@@ -1,5 +1,5 @@
 use rmolints::common::*;
-use rmolints::{two_electron, rys, hgp, hgp_opt};
+use rmolints::{two_electron, rys, hgp, hgp};
 use std::time::Instant;
 
 fn s_orbital(alpha: f64, origin: Vec3) -> CGBF {
@@ -87,11 +87,11 @@ fn main() {
         hgp::electron_repulsion_hgp(&s1, &s1, &s1, &s1)
     });
 
-    let t_hgp_opt = benchmark_method("HGP Optimized", iterations, || {
-        hgp_opt::electron_repulsion_hgp_opt(&s1, &s1, &s1, &s1)
+    let t_hgp = benchmark_method("HGP Optimized", iterations, || {
+        hgp::electron_repulsion_hgp(&s1, &s1, &s1, &s1)
     });
 
-    println!("Speedup vs Standard: Rys={:.2}x, HGP={:.2}x, HGP-Opt={:.2}x\n", t_std/t_rys, t_std/t_hgp, t_std/t_hgp_opt);
+    println!("Speedup vs Standard: Rys={:.2}x, HGP={:.2}x, HGP-Opt={:.2}x\n", t_std/t_rys, t_std/t_hgp, t_std/t_hgp);
 
     // Test 2: Four s-orbitals (separated)
     println!("Test 2: Four s-orbitals (separated)");
@@ -110,11 +110,11 @@ fn main() {
         hgp::electron_repulsion_hgp(&s1, &s2, &s1, &s2)
     });
 
-    let t_hgp_opt = benchmark_method("HGP Optimized", iterations, || {
-        hgp_opt::electron_repulsion_hgp_opt(&s1, &s2, &s1, &s2)
+    let t_hgp = benchmark_method("HGP Optimized", iterations, || {
+        hgp::electron_repulsion_hgp(&s1, &s2, &s1, &s2)
     });
 
-    println!("Speedup vs Standard: Rys={:.2}x, HGP={:.2}x, HGP-Opt={:.2}x\n", t_std/t_rys, t_std/t_hgp, t_std/t_hgp_opt);
+    println!("Speedup vs Standard: Rys={:.2}x, HGP={:.2}x, HGP-Opt={:.2}x\n", t_std/t_rys, t_std/t_hgp, t_std/t_hgp);
 
     // Test 3: Mixed s and p orbitals
     println!("Test 3: Mixed s and p orbitals");
@@ -133,11 +133,11 @@ fn main() {
         hgp::electron_repulsion_hgp(&s1, &s1, &px, &px)
     });
 
-    let t_hgp_opt = benchmark_method("HGP Optimized", iterations, || {
-        hgp_opt::electron_repulsion_hgp_opt(&s1, &s1, &px, &px)
+    let t_hgp = benchmark_method("HGP Optimized", iterations, || {
+        hgp::electron_repulsion_hgp(&s1, &s1, &px, &px)
     });
 
-    println!("Speedup vs Standard: Rys={:.2}x, HGP={:.2}x, HGP-Opt={:.2}x\n", t_std/t_rys, t_std/t_hgp, t_std/t_hgp_opt);
+    println!("Speedup vs Standard: Rys={:.2}x, HGP={:.2}x, HGP-Opt={:.2}x\n", t_std/t_rys, t_std/t_hgp, t_std/t_hgp);
 
     // Test 4: Four p orbitals
     println!("Test 4: Four p orbitals");
@@ -156,11 +156,11 @@ fn main() {
         hgp::electron_repulsion_hgp(&px, &py, &px, &py)
     });
 
-    let t_hgp_opt = benchmark_method("HGP Optimized", iterations, || {
-        hgp_opt::electron_repulsion_hgp_opt(&px, &py, &px, &py)
+    let t_hgp = benchmark_method("HGP Optimized", iterations, || {
+        hgp::electron_repulsion_hgp(&px, &py, &px, &py)
     });
 
-    println!("Speedup vs Standard: Rys={:.2}x, HGP={:.2}x, HGP-Opt={:.2}x\n", t_std/t_rys, t_std/t_hgp, t_std/t_hgp_opt);
+    println!("Speedup vs Standard: Rys={:.2}x, HGP={:.2}x, HGP-Opt={:.2}x\n", t_std/t_rys, t_std/t_hgp, t_std/t_hgp);
 
     // Test 5: d orbitals (higher angular momentum)
     println!("Test 5: d orbitals (l=2, higher angular momentum)");
@@ -180,11 +180,11 @@ fn main() {
         hgp::electron_repulsion_hgp(&dxx, &s1, &dyy, &s1)
     });
 
-    let t_hgp_opt = benchmark_method("HGP Optimized", iterations, || {
-        hgp_opt::electron_repulsion_hgp_opt(&dxx, &s1, &dyy, &s1)
+    let t_hgp = benchmark_method("HGP Optimized", iterations, || {
+        hgp::electron_repulsion_hgp(&dxx, &s1, &dyy, &s1)
     });
 
-    println!("Speedup vs Standard: Rys={:.2}x, HGP={:.2}x, HGP-Opt={:.2}x\n", t_std/t_rys, t_std/t_hgp, t_std/t_hgp_opt);
+    println!("Speedup vs Standard: Rys={:.2}x, HGP={:.2}x, HGP-Opt={:.2}x\n", t_std/t_rys, t_std/t_hgp, t_std/t_hgp);
 
     // Test 6: Four d orbitals (maximum angular momentum for this test)
     println!("Test 6: Four d orbitals (maximum angular momentum)");
@@ -203,11 +203,11 @@ fn main() {
         hgp::electron_repulsion_hgp(&dxx, &dyy, &dzz, &s1)
     });
 
-    let t_hgp_opt = benchmark_method("HGP Optimized", iterations/2, || {
-        hgp_opt::electron_repulsion_hgp_opt(&dxx, &dyy, &dzz, &s1)
+    let t_hgp = benchmark_method("HGP Optimized", iterations/2, || {
+        hgp::electron_repulsion_hgp(&dxx, &dyy, &dzz, &s1)
     });
 
-    println!("Speedup vs Standard: Rys={:.2}x, HGP={:.2}x, HGP-Opt={:.2}x\n", t_std/t_rys, t_std/t_hgp, t_std/t_hgp_opt);
+    println!("Speedup vs Standard: Rys={:.2}x, HGP={:.2}x, HGP-Opt={:.2}x\n", t_std/t_rys, t_std/t_hgp, t_std/t_hgp);
 
     println!("=== Benchmark Complete ===");
 }

@@ -24,7 +24,7 @@
 - **Complete integral library**: All fundamental one- and two-electron integrals
 - **Multiple ERI algorithms**: Five different methods thoroughly benchmarked
 - **High accuracy**: Matches PyQuante2 reference to 1e-5 precision
-- **Excellent performance**: HGP-Opt method is 2x faster than alternatives
+- **Excellent performance**: HGP method is 2x faster than alternatives
 - **Parallel computation**: Multithreaded ERI evaluation using Rayon
 - **Real molecule support**: H2, H2O, benzene with STO-3G basis sets
 - **Well-tested**: 48 comprehensive tests covering all modules
@@ -79,7 +79,7 @@ cargo +nightly run --release --features simd --example simd_benchmark
 
 ```rust
 use rmolints::common::*;
-use rmolints::{one_electron, hgp_opt};
+use rmolints::{one_electron, hgp};
 
 // Create s-orbital centered at origin
 let origin = Vec3::new(0.0, 0.0, 0.0);
@@ -98,7 +98,7 @@ let kinetic = one_electron::kinetic(&s_orbital, &s_orbital);
 let nuclear = one_electron::nuclear_attraction(&s_orbital, &s_orbital, &origin);
 
 // Two-electron integral (recommended method)
-let eri = hgp_opt::electron_repulsion_hgp_opt(&s_orbital, &s_orbital,
+let eri = hgp::electron_repulsion_hgp(&s_orbital, &s_orbital,
                                                &s_orbital, &s_orbital);
 ```
 
@@ -114,7 +114,7 @@ let molecule = Molecule::h2o();
 let basis = build_sto3g_basis(&molecule);
 
 // Compute all unique ERIs in parallel (exploits 8-fold symmetry)
-let eris = compute_eri_tensor_parallel(&basis, ERIMethod::HeadGordonPopleOpt);
+let eris = compute_eri_tensor_parallel(&basis, ERIMethod::HeadGordonPople);
 
 // Returns Vec<(i, j, k, l, value)> for all unique integrals
 println!("Computed {} unique ERIs", eris.len());
@@ -152,17 +152,16 @@ All integrals use the Taketa-Huzinaga-O-ohata (THO) method:
 
 ### Two-Electron Integrals (ERIs)
 
-Five methods available with different performance characteristics:
+Four methods available with different performance characteristics:
 
 | Method | Function | Performance | Status |
 |--------|----------|-------------|--------|
-| **HGP-Opt** | `hgp_opt::electron_repulsion_hgp_opt()` | **Fastest (baseline)** | 🏆 **Recommended** |
+| **HGP** | `hgp::electron_repulsion_hgp()` | **Fastest (baseline)** | 🏆 **Recommended** |
 | **Rys** | `rys::electron_repulsion_rys()` | 1.7x slower | Good alternative |
 | **Standard** | `two_electron::electron_repulsion()` | 2.2x slower | Reference impl |
 | **HGP-SIMD** | `hgp_simd::electron_repulsion_hgp_simd()` | ~Equal on ARM | Optional (nightly) |
-| **HGP Original** | `hgp::electron_repulsion_hgp()` | 7x slower | Deprecated ❌ |
 
-**Recommendation**: Use **HGP-Opt** for all production code.
+**Recommendation**: Use **HGP** for all production code.
 
 ### Supported Molecules
 
@@ -192,17 +191,16 @@ let benzene = Molecule::benzene();    // C6H6
 
 | Method | Time (ms) | Speedup vs Standard | Notes |
 |--------|-----------|---------------------|-------|
-| **HGP-Opt** | **815** | **2.16x** | 🏆 **Fastest - recommended** |
+| **HGP** | **815** | **2.16x** | 🏆 **Fastest - recommended** |
 | Rys (optimized) | 1,442 | 1.22x | Second best |
 | Standard THO | 1,761 | 1.00x | Baseline |
-| HGP Original | 5,702 | 0.31x | Deprecated |
 
 ### Key Performance Learnings
 
 #### 1. Memory Layout Matters
 
-**Flat array vs nested structures**: The HGP-Opt method achieves a **2.4x speedup** over nested Vec storage by using:
-- Pre-allocated flat array with computed strides
+**Efficient array indexing vs nested structures**: The HGP method achieves a **2.4x speedup** over nested Vec storage by using:
+- Pre-allocated efficient array indexing with computed strides
 - Cache-optimal memory layout (stride-1 innermost loops)
 - Eliminated allocation overhead in hot loops
 
@@ -210,13 +208,13 @@ let benzene = Molecule::benzene();    // C6H6
 
 Different ERI methods have distinct performance profiles:
 
-- **HGP-Opt**: Best for all real-world molecules, scales well with size
+- **HGP**: Best for all real-world molecules, scales well with size
 - **Rys**: Good for high angular momentum (d, f orbitals)
 - **Standard**: Simplest code, good reference implementation
 
 **Performance ratio (independent of system variance):**
-- Rys is 1.77x slower than HGP-Opt (stable across systems)
-- Standard is 2.16x slower than HGP-Opt (stable across systems)
+- Rys is 1.77x slower than HGP (stable across systems)
+- Standard is 2.16x slower than HGP (stable across systems)
 
 #### 3. SIMD Limitations
 
@@ -228,11 +226,11 @@ SIMD vectorization (f64x4) provides **minimal benefit** for typical quantum chem
 - Memory already cache-optimal in scalar code
 - ARM NEON shows slower performance than scalar
 
-**Verdict**: Scalar HGP-Opt is simpler and faster. SIMD is optional for x86_64 experimentation.
+**Verdict**: Scalar HGP is simpler and faster. SIMD is optional for x86_64 experimentation.
 
 #### 4. Profiling Results
 
-CPU profiling identified the computational bottlenecks in HGP-Opt:
+CPU profiling identified the computational bottlenecks in HGP:
 
 - **VRR tensor computation**: 75-85% of total time
   - Stage 6 (Y-direction): ~25-30% of VRR time
@@ -246,10 +244,10 @@ CPU profiling identified the computational bottlenecks in HGP-Opt:
 
 Recent optimizations to Rys method achieved **~1.9x speedup**:
 
-1. **Flat GMatrix storage**: Replaced `Vec<Vec<f64>>` with flat array
+1. **Flat GMatrix storage**: Replaced `Vec<Vec<f64>>` with efficient array indexing
 2. **Cached product centers**: Eliminated 75% of redundant Gaussian product calculations
 
-These optimizations brought Rys from 3.2x slower to 1.7x slower vs HGP-Opt.
+These optimizations brought Rys from 3.2x slower to 1.7x slower vs HGP.
 
 ### Scaling Characteristics
 
@@ -267,20 +265,20 @@ ERI computation scales as O(N⁴) with basis set size N:
 
 ## Algorithm Details
 
-### Head-Gordon-Pople Optimized (HGP-Opt)
+### Head-Gordon-Pople (HGP)
 
 The recommended method uses:
 
 1. **VRR (Vertical Recurrence Relation)**: Build intermediate tensor in 7 stages
    - Stages 1-3: A-center recursion (x, y, z)
    - Stages 4-7: C-center recursion (x, y, z)
-   - Flat array storage with pre-computed strides
+   - Efficient array indexing storage with pre-computed strides
 
 2. **HRR (Horizontal Recurrence Relation)**: Convert VRR tensor to final integrals
    - Iterative implementation (not recursive)
    - Minimal computational cost (~10-15% of time)
 
-**Key innovation**: Flat array VRR tensor eliminates HashMap overhead, achieving 7x speedup over original HGP.
+**Key innovation**: VRR tensor with pre-computed strides for efficient array indexing.
 
 ### Rys Quadrature
 
@@ -288,7 +286,7 @@ Uses polynomial quadrature with Rys roots and weights:
 
 - Numerical quadrature of incomplete gamma function
 - Good for high angular momentum (L ≥ 3)
-- Recent optimizations: flat GMatrix storage, cached product centers
+- Recent optimizations: optimized GMatrix storage, cached product centers
 
 **Reference**: Augspurger, Bernholdt, Dykstra, *J. Comp. Chem.* **11**(8), 972-977 (1990).
 
@@ -311,7 +309,7 @@ Traditional recursive method from Taketa, Huzinaga, O-ohata:
 ```rust
 use rmolints::molecule::Molecule;
 use rmolints::basis::build_sto3g_basis;
-use rmolints::{one_electron, hgp_opt};
+use rmolints::{one_electron, hgp};
 
 fn main() {
     // Build water molecule
@@ -370,7 +368,7 @@ fn main() {
     println!("Computing ERIs for {} basis functions...", basis.len());
 
     let start = Instant::now();
-    let eris = compute_eri_tensor_parallel(&basis, ERIMethod::HeadGordonPopleOpt);
+    let eris = compute_eri_tensor_parallel(&basis, ERIMethod::HeadGordonPople);
     let elapsed = start.elapsed().as_millis();
 
     println!("Computed {} unique ERIs in {} ms", eris.len(), elapsed);
@@ -396,11 +394,11 @@ fn benchmark_method(basis: &[CGBF], indices: &[(usize, usize, usize, usize)],
 fn main() {
     // Create test basis and indices...
 
-    let hgp_time = benchmark_method(&basis, &indices, ERIMethod::HeadGordonPopleOpt);
+    let hgp_time = benchmark_method(&basis, &indices, ERIMethod::HeadGordonPople);
     let rys_time = benchmark_method(&basis, &indices, ERIMethod::Rys);
     let std_time = benchmark_method(&basis, &indices, ERIMethod::Standard);
 
-    println!("HGP-Opt: {:.2} ms (baseline)", hgp_time);
+    println!("HGP: {:.2} ms (baseline)", hgp_time);
     println!("Rys:     {:.2} ms ({:.2}x)", rys_time, rys_time / hgp_time);
     println!("Standard: {:.2} ms ({:.2}x)", std_time, std_time / hgp_time);
 }
@@ -435,7 +433,7 @@ cargo test --release
 
 # Run specific module tests
 cargo test --release one_electron
-cargo test --release hgp_opt
+cargo test --release hgp
 cargo test --release parallel
 
 # Run with output
@@ -461,10 +459,10 @@ Generate flamegraphs to identify bottlenecks:
 
 ```bash
 # Parallel profiling (multi-threaded)
-cargo run --release --example profile_hgp_opt
+cargo run --release --example profile_hgp
 
 # Serial profiling (single-threaded, clearer results)
-cargo run --release --example profile_hgp_opt_serial
+cargo run --release --example profile_hgp_serial
 
 # Open generated flamegraphs
 open flamegraph.svg
@@ -473,25 +471,21 @@ open flamegraph_serial.svg
 
 ### Optimization History
 
-The project has undergone several major optimizations:
+The project has implemented several key optimizations:
 
-1. **Nested Vec → Flat Array** (2.9x speedup)
-   - Replaced `Vec<Vec<...>>` with flat array + strides
-   - Improved cache locality in VRR tensor
+1. **HGP Method**
+   - VRR tensor with pre-computed strides for efficient indexing
+   - Iterative HRR to avoid repeated VRR calls
+   - Excellent cache locality through contiguous memory layout
 
-2. **HashMap → Flat Array** (2.4x additional speedup)
-   - Eliminated allocation overhead in hot loops
-   - Pre-computed array indices
-
-3. **Rys GMatrix Optimization** (1.9x speedup on Rys)
-   - Flat GMatrix storage
+2. **Rys Optimization** (1.9x speedup)
+   - Optimized GMatrix storage (contiguous arrays)
    - Cached Gaussian product centers
 
-4. **SIMD Attempt** (no speedup on ARM)
+3. **SIMD Exploration** (no benefit on ARM)
    - Implemented f64x4 vectorization
    - Overhead dominated benefits for small loops
-
-**Total improvement**: 7x faster than original HGP implementation.
+   - Opt-in feature for experimentation
 
 ### Performance Measurement Best Practices
 

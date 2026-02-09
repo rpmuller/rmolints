@@ -43,7 +43,6 @@ fn main() {
         ("Standard THO", ERIMethod::Standard),
         ("Rys Quadrature", ERIMethod::Rys),
         ("Head-Gordon-Pople", ERIMethod::HeadGordonPople),
-        ("HGP Optimized", ERIMethod::HeadGordonPopleOpt),
         #[cfg(feature = "simd")]
         ("HGP SIMD", ERIMethod::HeadGordonPopleSimd),
     ];
@@ -108,8 +107,8 @@ fn main() {
     }
 
     // Print formatted table
-    println!("| Molecule | Basis Fns | Unique ERIs | Standard THO | Rys Quad | HGP Original | HGP Opt |");
-    println!("|----------|-----------|-------------|--------------|----------|--------------|---------|");
+    println!("| Molecule | Basis Fns | Unique ERIs | Standard THO | Rys Quad | HGP |");
+    println!("|----------|-----------|-------------|--------------|----------|-----|");
 
     for (idx, (mol_name, molecule)) in molecules.iter().enumerate() {
         let basis = build_sto3g_basis(molecule);

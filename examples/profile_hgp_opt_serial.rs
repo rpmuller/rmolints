@@ -1,5 +1,5 @@
 use rmolints::basis::build_sto3g_basis;
-use rmolints::hgp_opt::electron_repulsion_hgp_opt;
+use rmolints::hgp::electron_repulsion_hgp;
 use rmolints::molecule::Molecule;
 use std::time::Instant;
 
@@ -23,7 +23,7 @@ fn main() {
             for k in 0..n {
                 for l in 0..=k {
                     if i * (i + 1) / 2 + j >= k * (k + 1) / 2 + l {
-                        let _ = electron_repulsion_hgp_opt(
+                        let _ = electron_repulsion_hgp(
                             &basis[i], &basis[j], &basis[k], &basis[l]
                         );
                         count += 1;
@@ -56,7 +56,7 @@ fn main() {
                 for k in 0..n {
                     for l in 0..=k {
                         if i * (i + 1) / 2 + j >= k * (k + 1) / 2 + l {
-                            let _ = electron_repulsion_hgp_opt(
+                            let _ = electron_repulsion_hgp(
                                 &basis[i], &basis[j], &basis[k], &basis[l]
                             );
                             iter_count += 1;

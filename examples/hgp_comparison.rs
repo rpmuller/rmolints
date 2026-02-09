@@ -1,5 +1,5 @@
 use rmolints::common::*;
-use rmolints::{hgp, hgp_opt};
+use rmolints::{hgp, hgp};
 use std::time::Instant;
 
 fn s_orbital(alpha: f64, origin: Vec3) -> CGBF {
@@ -85,7 +85,7 @@ fn main() {
     });
 
     let t_opt = benchmark_hgp("HGP Optimized", iterations, || {
-        hgp_opt::electron_repulsion_hgp_opt(&s1, &s1, &s1, &s1)
+        hgp::electron_repulsion_hgp(&s1, &s1, &s1, &s1)
     });
 
     println!("Speedup: {:.2}x\n", t_old / t_opt);
@@ -100,7 +100,7 @@ fn main() {
     });
 
     let t_opt = benchmark_hgp("HGP Optimized", iterations, || {
-        hgp_opt::electron_repulsion_hgp_opt(&s1, &s2, &s1, &s2)
+        hgp::electron_repulsion_hgp(&s1, &s2, &s1, &s2)
     });
 
     println!("Speedup: {:.2}x\n", t_old / t_opt);
@@ -115,7 +115,7 @@ fn main() {
     });
 
     let t_opt = benchmark_hgp("HGP Optimized", iterations, || {
-        hgp_opt::electron_repulsion_hgp_opt(&s1, &s1, &px, &px)
+        hgp::electron_repulsion_hgp(&s1, &s1, &px, &px)
     });
 
     println!("Speedup: {:.2}x\n", t_old / t_opt);
@@ -130,7 +130,7 @@ fn main() {
     });
 
     let t_opt = benchmark_hgp("HGP Optimized", iterations, || {
-        hgp_opt::electron_repulsion_hgp_opt(&px, &py, &px, &py)
+        hgp::electron_repulsion_hgp(&px, &py, &px, &py)
     });
 
     println!("Speedup: {:.2}x\n", t_old / t_opt);
@@ -146,7 +146,7 @@ fn main() {
     });
 
     let t_opt = benchmark_hgp("HGP Optimized", iterations, || {
-        hgp_opt::electron_repulsion_hgp_opt(&dxx, &s1, &dyy, &s1)
+        hgp::electron_repulsion_hgp(&dxx, &s1, &dyy, &s1)
     });
 
     println!("Speedup: {:.2}x\n", t_old / t_opt);
@@ -161,7 +161,7 @@ fn main() {
     });
 
     let t_opt = benchmark_hgp("HGP Optimized", iterations / 2, || {
-        hgp_opt::electron_repulsion_hgp_opt(&dxx, &dyy, &dzz, &s1)
+        hgp::electron_repulsion_hgp(&dxx, &dyy, &dzz, &s1)
     });
 
     println!("Speedup: {:.2}x\n", t_old / t_opt);

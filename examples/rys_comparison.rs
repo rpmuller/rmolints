@@ -5,7 +5,7 @@ use std::time::Instant;
 
 fn main() {
     println!("\n=== Rys Optimization Comparison ===\n");
-    println!("Comparing Rys vs HGP-Opt on benzene\n");
+    println!("Comparing Rys vs HGP on benzene\n");
 
     let molecule = Molecule::benzene();
     let basis = build_sto3g_basis(&molecule);
@@ -16,7 +16,7 @@ fn main() {
 
     // Run each method 5 times to get stable measurements
     let methods = vec![
-        ("HGP-Opt", ERIMethod::HeadGordonPopleOpt),
+        ("HGP", ERIMethod::HeadGordonPople),
         ("Rys", ERIMethod::Rys),
         ("Standard", ERIMethod::Standard),
     ];

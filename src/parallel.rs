@@ -4,7 +4,7 @@
 //! particularly useful for computing batches of two-electron integrals.
 
 use crate::common::CGBF;
-use crate::{hgp, hgp_opt, rys, two_electron};
+use crate::{hgp, rys, two_electron};
 #[cfg(feature = "simd")]
 use crate::hgp_simd;
 use rayon::prelude::*;
@@ -16,10 +16,8 @@ pub enum ERIMethod {
     Standard,
     /// Rys quadrature method
     Rys,
-    /// Head-Gordon-Pople method (original)
+    /// Head-Gordon-Pople method
     HeadGordonPople,
-    /// Head-Gordon-Pople method (optimized)
-    HeadGordonPopleOpt,
     /// Head-Gordon-Pople method (SIMD-optimized, requires nightly)
     #[cfg(feature = "simd")]
     HeadGordonPopleSimd,
@@ -68,7 +66,6 @@ pub fn compute_eris_parallel(
                 ERIMethod::Standard => two_electron::electron_repulsion(bra1, bra2, ket1, ket2),
                 ERIMethod::Rys => rys::electron_repulsion_rys(bra1, bra2, ket1, ket2),
                 ERIMethod::HeadGordonPople => hgp::electron_repulsion_hgp(bra1, bra2, ket1, ket2),
-                ERIMethod::HeadGordonPopleOpt => hgp_opt::electron_repulsion_hgp_opt(bra1, bra2, ket1, ket2),
                 #[cfg(feature = "simd")]
                 ERIMethod::HeadGordonPopleSimd => hgp_simd::electron_repulsion_hgp_simd(bra1, bra2, ket1, ket2),
             }
@@ -145,7 +142,6 @@ pub fn compute_eri_tensor_parallel(
                 ERIMethod::Standard => two_electron::electron_repulsion(bra1, bra2, ket1, ket2),
                 ERIMethod::Rys => rys::electron_repulsion_rys(bra1, bra2, ket1, ket2),
                 ERIMethod::HeadGordonPople => hgp::electron_repulsion_hgp(bra1, bra2, ket1, ket2),
-                ERIMethod::HeadGordonPopleOpt => hgp_opt::electron_repulsion_hgp_opt(bra1, bra2, ket1, ket2),
                 #[cfg(feature = "simd")]
                 ERIMethod::HeadGordonPopleSimd => hgp_simd::electron_repulsion_hgp_simd(bra1, bra2, ket1, ket2),
             };
