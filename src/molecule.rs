@@ -13,23 +13,50 @@ pub struct Element {
 }
 
 impl Element {
+    // Period 1
     pub const H: Element = Element { atomic_number: 1, symbol: "H" };
+    pub const HE: Element = Element { atomic_number: 2, symbol: "He" };
+
+    // Period 2
+    pub const LI: Element = Element { atomic_number: 3, symbol: "Li" };
+    pub const BE: Element = Element { atomic_number: 4, symbol: "Be" };
+    pub const B: Element = Element { atomic_number: 5, symbol: "B" };
     pub const C: Element = Element { atomic_number: 6, symbol: "C" };
     pub const N: Element = Element { atomic_number: 7, symbol: "N" };
     pub const O: Element = Element { atomic_number: 8, symbol: "O" };
     pub const F: Element = Element { atomic_number: 9, symbol: "F" };
+    pub const NE: Element = Element { atomic_number: 10, symbol: "Ne" };
+
+    // Period 3
+    pub const NA: Element = Element { atomic_number: 11, symbol: "Na" };
+    pub const MG: Element = Element { atomic_number: 12, symbol: "Mg" };
+    pub const AL: Element = Element { atomic_number: 13, symbol: "Al" };
+    pub const SI: Element = Element { atomic_number: 14, symbol: "Si" };
+    pub const P: Element = Element { atomic_number: 15, symbol: "P" };
     pub const S: Element = Element { atomic_number: 16, symbol: "S" };
     pub const CL: Element = Element { atomic_number: 17, symbol: "Cl" };
+    pub const AR: Element = Element { atomic_number: 18, symbol: "Ar" };
 
     pub fn from_atomic_number(z: u32) -> Option<Element> {
         match z {
             1 => Some(Element::H),
+            2 => Some(Element::HE),
+            3 => Some(Element::LI),
+            4 => Some(Element::BE),
+            5 => Some(Element::B),
             6 => Some(Element::C),
             7 => Some(Element::N),
             8 => Some(Element::O),
             9 => Some(Element::F),
+            10 => Some(Element::NE),
+            11 => Some(Element::NA),
+            12 => Some(Element::MG),
+            13 => Some(Element::AL),
+            14 => Some(Element::SI),
+            15 => Some(Element::P),
             16 => Some(Element::S),
             17 => Some(Element::CL),
+            18 => Some(Element::AR),
             _ => None,
         }
     }

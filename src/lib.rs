@@ -27,6 +27,7 @@ pub mod boys;
 pub mod utils;
 pub mod molecule;
 pub mod basis;
+pub mod basis_data;
 
 /// Common types and utilities used across modules
 pub mod common {

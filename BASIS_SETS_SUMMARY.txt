@@ -1,0 +1,344 @@
+================================================================================
+COMPLETE BASIS SET DATA PACKAGE
+Elements H through Ar (Atomic Numbers 1-18)
+STO-3G, 6-31G, and 6-31G* Basis Sets
+================================================================================
+
+FILES IN THIS PACKAGE:
+----------------------
+1. COMPLETE_BASIS_SETS_H_AR.txt  - Full text format with all exponents/coefficients
+2. basis_sets_h_to_ar.json       - Machine-readable JSON format
+3. BASIS_SETS_SUMMARY.txt        - This summary file (quick reference)
+
+DATA SOURCE:
+------------
+Basis Set Exchange: https://www.basissetexchange.org/
+Format: PSI4 Gaussian Basis Set Library
+GitHub: https://github.com/psi4/psi4/tree/master/psi4/share/psi4/basis
+
+REFERENCES:
+-----------
+STO-3G:
+  • H-Ne:  Hehre, Stewart, Pople, J. Chem. Phys. 56, 2657 (1969)
+  • Na-Ar: Hehre, Ditchfield, Stewart, Pople, J. Chem. Phys. 52, 2769 (1970)
+
+6-31G:
+  • H-He:  Hehre, Ditchfield, Pople, J. Chem. Phys. 56, 2257 (1972)
+  • Li-Ne: Dill and Pople, J. Chem. Phys. 62, 2921 (1975)
+  • Na-Ar: Francl et al., J. Chem. Phys. 77, 3654 (1982)
+
+6-31G*:
+  • Hariharan and Pople, Theoret. Chimica Acta 28, 213 (1973)
+
+================================================================================
+QUICK REFERENCE TABLES
+================================================================================
+
+TABLE 1: D POLARIZATION EXPONENTS (6-31G* ONLY)
+------------------------------------------------
+Element   Z    D Exponent    Notes
+---------------------------------------
+H         1    N/A           No d function
+He        2    N/A           No d function
+Li        3    0.2000000     
+Be        4    0.4000000     
+B         5    0.6000000     
+C         6    0.8000000     Standard for C, N, O, F
+N         7    0.8000000     Standard for C, N, O, F
+O         8    0.8000000     Standard for C, N, O, F
+F         9    0.8000000     Standard for C, N, O, F
+Ne        10   0.8000000     
+Na        11   0.1750000     
+Mg        12   0.1750000     
+Al        13   0.3250000     
+Si        14   0.4500000     
+P         15   0.5500000     
+S         16   0.6500000     
+Cl        17   0.7500000     
+Ar        18   0.8500000     
+
+TABLE 2: BASIS FUNCTION COUNTS
+-------------------------------
+Element   STO-3G   6-31G   6-31G*   Difference (6-31G* - 6-31G)
+------------------------------------------------------------------
+H         1        2       2        0 (no d functions)
+He        1        2       2        0 (no d functions)
+Li        5        9       15       +6 (cartesian d functions)
+Be        5        9       15       +6
+B         5        9       15       +6
+C         5        9       15       +6
+N         5        9       15       +6
+O         5        9       15       +6
+F         5        9       15       +6
+Ne        5        9       15       +6
+Na        9        13      19       +6
+Mg        9        13      19       +6
+Al        9        13      19       +6
+Si        9        13      19       +6
+P         9        13      19       +6
+S         9        13      19       +6
+Cl        9        13      19       +6
+Ar        9        13      19       +6
+
+TABLE 3: SHELL COMPOSITION
+---------------------------
+Element   STO-3G         6-31G            6-31G*
+-------------------------------------------------------
+H         1S (3)         2S (3+1)         2S (3+1)
+He        1S (3)         2S (3+1)         2S (3+1)
+Li-Ne     1S+1SP (3+3)   1S+2SP (6+3+1)   1S+2SP+1D (6+3+1+1)
+Na-Ar     1S+2SP (3+3+3) 1S+3SP (6+6+3+1) 1S+3SP+1D (6+6+3+1+1)
+
+Numbers in parentheses = number of primitive Gaussians
+
+================================================================================
+KEY CONCEPTS
+================================================================================
+
+SHELL TYPES:
+-----------
+S:  s-type orbital (spherical symmetry, 1 function)
+SP: Combined s and p orbitals (same exponents, different coefficients, 4 functions)
+D:  d-type orbital (6 cartesian or 5 spherical functions)
+
+CONTRACTION:
+-----------
+Primitives are uncontracted Gaussian functions with specific exponents.
+Contracted functions are linear combinations of primitives.
+
+Example: 6-31G for Carbon
+  • Core S: 6 primitives contracted into 1 function (tight, represents 1s)
+  • Valence SP: 3 primitives contracted into 1 s + 3 p functions (represents 2s, 2p)
+  • Valence SP: 1 primitive = 1 s + 3 p functions (diffuse, flexible)
+
+SPLIT-VALENCE:
+-------------
+Valence orbitals are represented by multiple basis functions (e.g., 3+1 in 6-31G).
+This allows more flexibility for describing chemical bonding.
+Core orbitals use single contracted function (less important for bonding).
+
+POLARIZATION:
+------------
+Adding higher angular momentum functions (d on heavy atoms, p on H).
+Allows electron density to polarize away from nuclear centers.
+Critical for accurate molecular geometries and energies.
+6-31G* adds d functions on Li-Ar (but NOT on H, He).
+
+================================================================================
+BASIS SET CHARACTERISTICS
+================================================================================
+
+STO-3G:
+-------
+Type:       Minimal basis set
+Speed:      Fastest
+Accuracy:   Lowest
+Use case:   Qualitative studies, initial geometry optimization
+Notes:      Each AO represented by 3 contracted Gaussians
+            Good for teaching, fast screening
+
+6-31G:
+------
+Type:       Split-valence double-zeta
+Speed:      Moderate
+Accuracy:   Good
+Use case:   Standard calculations, geometry optimization
+Notes:      Core: 6 primitives contracted
+            Valence: Split into 2 parts (3+1 primitives)
+            Better than STO-3G for bonding
+
+6-31G*:
+-------
+Type:       Polarized split-valence
+Speed:      Slower than 6-31G
+Accuracy:   Very good
+Use case:   Production calculations, accurate geometries
+Notes:      Same as 6-31G plus d polarization on heavy atoms
+            Essential for accurate bond angles and energies
+            Standard choice for organic molecules
+
+COMPUTATIONAL COST SCALING:
+--------------------------
+For a molecule with N atoms:
+  STO-3G < 6-31G < 6-31G*
+  
+Typical speed ratio: STO-3G : 6-31G : 6-31G* ≈ 1 : 3-4 : 5-8
+
+================================================================================
+INTEGRATION INTO RUST CODE
+================================================================================
+
+RECOMMENDED STRUCTURE:
+---------------------
+1. Define structs for:
+   - BasisFunction (exponent, coefficient)
+   - Shell (shell_type, primitives)
+   - AtomicBasis (element, shells)
+   - BasisSet (name, atoms HashMap)
+
+2. Parse JSON file:
+   - Use serde_json crate
+   - Load basis_sets_h_to_ar.json
+   - Deserialize into Rust structs
+
+3. Access pattern:
+   basis_set["6-31G*"]["C"][shell_index].primitives[prim_index]
+
+EXAMPLE USAGE:
+-------------
+// Get carbon 6-31G* basis
+let c_basis = basis_sets.get("6-31G*").get("C");
+
+// Iterate over shells
+for shell in c_basis.shells {
+    match shell.shell_type {
+        "S" => process_s_shell(&shell),
+        "SP" => process_sp_shell(&shell),
+        "D" => process_d_shell(&shell),
+        _ => panic!("Unknown shell type"),
+    }
+}
+
+// Calculate overlap integral
+for prim1 in shell1.primitives {
+    for prim2 in shell2.primitives {
+        let s = overlap(prim1.exponent, prim2.exponent, ...);
+        result += prim1.coefficient * prim2.coefficient * s;
+    }
+}
+
+IMPORTANT NOTES:
+---------------
+1. SP shells have BOTH s_coeff and p_coeff for each primitive
+2. Exponents are SHARED between s and p in SP shells
+3. D shells in 6-31G* typically have single primitive (coefficient = 1.0)
+4. Always check shell_type before accessing coefficients
+5. Cartesian vs. spherical: files use "cartesian" convention
+
+================================================================================
+EXAMPLE DATA EXTRACTION
+================================================================================
+
+CARBON (C, Z=6) IN 6-31G*:
+
+Shell 1 (S): 6 primitives
+  Exponent         Coefficient
+  3047.5249000     0.0018347
+  457.3695100      0.0140373
+  103.9486900      0.0688426
+  29.2101550       0.2321844
+  9.2866630        0.4679413
+  3.1639270        0.3623120
+
+Shell 2 (SP): 3 primitives
+  Exponent         S_Coeff        P_Coeff
+  7.8682724        -0.1193324     0.0689991
+  1.8812885        -0.1608542     0.3164240
+  0.5442493        1.1434564      0.7443083
+
+Shell 3 (SP): 1 primitive
+  Exponent         S_Coeff        P_Coeff
+  0.1687144        1.0000000      1.0000000
+
+Shell 4 (D): 1 primitive
+  Exponent         Coefficient
+  0.8000000        1.0000000
+
+Total: 15 basis functions (1s + 1s + 1s + 3p + 3p + 6d = 15)
+
+================================================================================
+VALIDATION AND TESTING
+================================================================================
+
+RECOMMENDED TESTS:
+-----------------
+1. Normalization:
+   ∫ φᵢ² dτ = 1 (after contraction)
+
+2. Overlap integrals:
+   Compare S(φᵢ, φⱼ) with known values (e.g., Szabo & Ostlund)
+
+3. Known molecules:
+   - H₂: bond length ~0.741 Å
+   - H₂O: bond angle ~104.5°
+   - Test against Gaussian/ORCA/PSI4 results
+
+4. Energy convergence:
+   STO-3G > 6-31G > 6-31G* (lower energy = better)
+
+5. Basis function counts:
+   Verify total functions matches Table 2
+
+================================================================================
+COMMON PITFALLS
+================================================================================
+
+1. SP SHELLS:
+   • Must handle both s and p coefficients
+   • Same exponents, different coefficients
+   • Generates 1 s-function + 3 p-functions (4 total)
+
+2. NORMALIZATION:
+   • Primitives may not be normalized
+   • Apply normalization constants
+   • N = (2α/π)^(3/4) for s-type Gaussians
+
+3. CONTRACTION:
+   • Don't forget to sum over primitives
+   • φ = Σᵢ cᵢ gᵢ (contracted = sum of primitives)
+
+4. ANGULAR MOMENTUM:
+   • S: l=0 (1 function)
+   • P: l=1 (3 functions: px, py, pz)
+   • D: l=2 (6 cartesian or 5 spherical)
+
+5. CARTESIAN vs SPHERICAL:
+   • Files use "cartesian" convention
+   • 6 cartesian d: xx, yy, zz, xy, xz, yz
+   • 5 spherical d: remove linear combination
+
+================================================================================
+ADDITIONAL RESOURCES
+================================================================================
+
+Books:
+------
+• Szabo & Ostlund: "Modern Quantum Chemistry" (1989)
+  Classic textbook, includes basis set tables and integral formulas
+
+• Helgaker, Jorgensen, Olsen: "Molecular Electronic-Structure Theory" (2000)
+  Comprehensive reference for integrals and basis sets
+
+• Cramer: "Essentials of Computational Chemistry" (2004)
+  Practical guide to basis sets and methods
+
+Online:
+-------
+• Basis Set Exchange: https://www.basissetexchange.org/
+  Complete database, multiple formats
+
+• EMSL Basis Set Library: https://www.basissetexchange.org/
+  Original source (now merged with BSE)
+
+• PSI4 Documentation: https://psicode.org/
+  Excellent documentation on basis sets
+
+Software:
+---------
+• Gaussian: https://gaussian.com/
+• ORCA: https://orcaforum.kofo.mpg.de/
+• PSI4: https://psicode.org/
+• NWChem: https://nwchemgit.github.io/
+
+All can output basis set data for validation.
+
+================================================================================
+END OF SUMMARY
+================================================================================
+
+For complete numerical data, see:
+  • COMPLETE_BASIS_SETS_H_AR.txt (human-readable)
+  • basis_sets_h_to_ar.json (machine-readable)
+
+Generated: 2026-02-09
+Source: Basis Set Exchange via PSI4 GitHub repository
