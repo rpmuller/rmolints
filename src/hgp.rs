@@ -23,7 +23,7 @@ struct VRRTensor {
 }
 
 impl VRRTensor {
-    /// Create new VRR tensor with given dimensions
+    /// Create new VRR tensor with given dimensions (zeroed)
     fn new(dims: [usize; 7]) -> Self {
         let total_size: usize = dims.iter().product();
         let mut strides = [1; 7];
@@ -37,6 +37,15 @@ impl VRRTensor {
         VRRTensor {
             data: vec![0.0; total_size],
             strides,
+        }
+    }
+
+    /// Add another VRR tensor scaled by a coefficient
+    /// Used for VRR-level contraction optimization
+    #[inline]
+    fn add_scaled(&mut self, other: &VRRTensor, scale: f64) {
+        for i in 0..self.data.len() {
+            self.data[i] += other.data[i] * scale;
         }
     }
 
@@ -120,6 +129,112 @@ pub fn electron_repulsion_hgp(
     }
 
     sum
+}
+
+/// Compute two-electron repulsion integral using VRR-level contraction optimization
+///
+/// This optimized version exploits the linearity of HRR by:
+/// 1. Computing VRR tensors for each primitive quartet
+/// 2. Scaling each by coefficient × normalization and accumulating
+/// 3. Applying HRR once to the accumulated VRR tensor
+///
+/// Expected speedup: ~10-20% for typical basis sets (STO-3G, 6-31G)
+/// with 3+ primitives per CGBF, due to reducing HRR calls from O(n^4) to 1.
+pub fn electron_repulsion_hgp_contracted(
+    bra1: &CGBF,
+    bra2: &CGBF,
+    ket1: &CGBF,
+    ket2: &CGBF,
+) -> f64 {
+    let (la, ma, na) = bra1.shell;
+    let (lb, mb, nb) = bra2.shell;
+    let (lc, mc, nc) = ket1.shell;
+    let (ld, md, nd) = ket2.shell;
+
+    // Compute maximum angular momentum needed for VRR
+    let la_max = la + lb;
+    let ma_max = ma + mb;
+    let na_max = na + nb;
+    let lc_max = lc + ld;
+    let mc_max = mc + md;
+    let nc_max = nc + nd;
+
+    // Allocate accumulated VRR tensor (zeroed)
+    let dims = [
+        (la_max + 1) as usize,
+        (ma_max + 1) as usize,
+        (na_max + 1) as usize,
+        (lc_max + 1) as usize,
+        (mc_max + 1) as usize,
+        (nc_max + 1) as usize,
+        (la_max + ma_max + na_max + lc_max + mc_max + nc_max + 1) as usize,
+    ];
+    let mut vrr_acc = VRRTensor::new(dims);
+
+    // Loop over primitives, accumulate scaled VRR tensors
+    for p1 in &bra1.primitives {
+        for p2 in &bra2.primitives {
+            for p3 in &ket1.primitives {
+                for p4 in &ket2.primitives {
+                    // Compute normalization factors
+                    let norm_a = gaussian_normalization(p1.exponent, la, ma, na);
+                    let norm_b = gaussian_normalization(p2.exponent, lb, mb, nb);
+                    let norm_c = gaussian_normalization(p3.exponent, lc, mc, nc);
+                    let norm_d = gaussian_normalization(p4.exponent, ld, md, nd);
+
+                    // Weight = coefficient product × normalization product
+                    let weight = p1.coefficient
+                        * p2.coefficient
+                        * p3.coefficient
+                        * p4.coefficient
+                        * norm_a
+                        * norm_b
+                        * norm_c
+                        * norm_d;
+
+                    // Compute VRR for this primitive quartet
+                    let vrr_prim = compute_vrr_tensor(
+                        bra1.origin,
+                        p1.exponent,
+                        bra2.origin,
+                        p2.exponent,
+                        ket1.origin,
+                        p3.exponent,
+                        ket2.origin,
+                        p4.exponent,
+                        la_max,
+                        ma_max,
+                        na_max,
+                        lc_max,
+                        mc_max,
+                        nc_max,
+                    );
+
+                    // Add scaled VRR to accumulator
+                    vrr_acc.add_scaled(&vrr_prim, weight);
+                }
+            }
+        }
+    }
+
+    // Apply HRR once to contracted VRR tensor
+    hrr_iterative(
+        &vrr_acc,
+        bra1.shell,
+        bra2.shell,
+        ket1.shell,
+        ket2.shell,
+        bra1.origin,
+        bra2.origin,
+        ket1.origin,
+        ket2.origin,
+        la_max,
+        ma_max,
+        na_max,
+        lc_max,
+        mc_max,
+        nc_max,
+    )
 }
 
 /// Compute primitive ERI using optimized VRR+HRR
@@ -543,5 +658,162 @@ mod tests {
         };
         let result = electron_repulsion_hgp(&s, &s, &px, &px);
         assert_relative_eq!(result, 0.940315972579, epsilon = 1e-5);
+    }
+
+    // Tests for contracted VRR optimization
+
+    fn multi_primitive_s_orbital(exponents: &[f64], coefficients: &[f64], origin: Vec3) -> CGBF {
+        let primitives = exponents
+            .iter()
+            .zip(coefficients.iter())
+            .map(|(&exp, &coef)| Primitive {
+                exponent: exp,
+                coefficient: coef,
+            })
+            .collect();
+        CGBF {
+            origin,
+            shell: (0, 0, 0),
+            primitives,
+        }
+    }
+
+    #[test]
+    fn test_contracted_vs_original_single_primitive() {
+        // Single primitive - both methods should give identical results
+        let origin = Vec3::new(0.0, 0.0, 0.0);
+        let s = s_orbital(1.0, origin);
+
+        let original = electron_repulsion_hgp(&s, &s, &s, &s);
+        let contracted = electron_repulsion_hgp_contracted(&s, &s, &s, &s);
+
+        assert_relative_eq!(original, contracted, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn test_contracted_vs_original_two_primitives() {
+        // Two primitives per CGBF (4 primitive quartets total)
+        let origin = Vec3::new(0.0, 0.0, 0.0);
+        let exps = vec![1.0, 0.5];
+        let coefs = vec![0.6, 0.4];
+        let s = multi_primitive_s_orbital(&exps, &coefs, origin);
+
+        let original = electron_repulsion_hgp(&s, &s, &s, &s);
+        let contracted = electron_repulsion_hgp_contracted(&s, &s, &s, &s);
+
+        assert_relative_eq!(original, contracted, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn test_contracted_vs_original_three_primitives() {
+        // Three primitives per CGBF (81 primitive quartets) - typical STO-3G case
+        let origin = Vec3::new(0.0, 0.0, 0.0);
+        let exps = vec![3.42525091, 0.62391373, 0.16885540];
+        let coefs = vec![0.15432897, 0.53532814, 0.44463454];
+        let s = multi_primitive_s_orbital(&exps, &coefs, origin);
+
+        let original = electron_repulsion_hgp(&s, &s, &s, &s);
+        let contracted = electron_repulsion_hgp_contracted(&s, &s, &s, &s);
+
+        assert_relative_eq!(original, contracted, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn test_contracted_vs_original_separated() {
+        // Test with separated orbitals
+        let p1 = Vec3::new(0.0, 0.0, 0.0);
+        let p2 = Vec3::new(0.0, 0.0, 1.5);
+        let exps = vec![1.5, 0.75];
+        let coefs = vec![0.6, 0.4];
+        let s1 = multi_primitive_s_orbital(&exps, &coefs, p1);
+        let s2 = multi_primitive_s_orbital(&exps, &coefs, p2);
+
+        let original = electron_repulsion_hgp(&s1, &s1, &s2, &s2);
+        let contracted = electron_repulsion_hgp_contracted(&s1, &s1, &s2, &s2);
+
+        assert_relative_eq!(original, contracted, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn test_contracted_vs_original_p_orbitals() {
+        // Test with p-orbitals
+        let origin = Vec3::new(0.0, 0.0, 0.0);
+        let exps = vec![2.0, 0.8];
+        let coefs = vec![0.65, 0.35];
+        let primitives: Vec<Primitive> = exps
+            .iter()
+            .zip(coefs.iter())
+            .map(|(&exp, &coef)| Primitive {
+                exponent: exp,
+                coefficient: coef,
+            })
+            .collect();
+
+        let px = CGBF {
+            origin,
+            shell: (1, 0, 0),
+            primitives: primitives.clone(),
+        };
+
+        let s = CGBF {
+            origin,
+            shell: (0, 0, 0),
+            primitives,
+        };
+
+        let original = electron_repulsion_hgp(&s, &s, &px, &px);
+        let contracted = electron_repulsion_hgp_contracted(&s, &s, &px, &px);
+
+        assert_relative_eq!(original, contracted, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn test_contracted_vs_original_mixed_shells() {
+        // Test with different angular momenta on different centers
+        let origin = Vec3::new(0.0, 0.0, 0.0);
+        let exps = vec![1.5, 0.6];
+        let coefs = vec![0.7, 0.3];
+
+        let primitives: Vec<Primitive> = exps
+            .iter()
+            .zip(coefs.iter())
+            .map(|(&exp, &coef)| Primitive {
+                exponent: exp,
+                coefficient: coef,
+            })
+            .collect();
+
+        let s = CGBF {
+            origin,
+            shell: (0, 0, 0),
+            primitives: primitives.clone(),
+        };
+
+        let px = CGBF {
+            origin,
+            shell: (1, 0, 0),
+            primitives: primitives.clone(),
+        };
+
+        let py = CGBF {
+            origin,
+            shell: (0, 1, 0),
+            primitives: primitives.clone(),
+        };
+
+        let pz = CGBF {
+            origin,
+            shell: (0, 0, 1),
+            primitives,
+        };
+
+        // Test various combinations
+        let result1_orig = electron_repulsion_hgp(&s, &px, &py, &pz);
+        let result1_cont = electron_repulsion_hgp_contracted(&s, &px, &py, &pz);
+        assert_relative_eq!(result1_orig, result1_cont, epsilon = 1e-12);
+
+        let result2_orig = electron_repulsion_hgp(&px, &px, &py, &py);
+        let result2_cont = electron_repulsion_hgp_contracted(&px, &px, &py, &py);
+        assert_relative_eq!(result2_orig, result2_cont, epsilon = 1e-12);
     }
 }

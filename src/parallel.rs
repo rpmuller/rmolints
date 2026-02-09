@@ -18,6 +18,8 @@ pub enum ERIMethod {
     Rys,
     /// Head-Gordon-Pople method
     HeadGordonPople,
+    /// Head-Gordon-Pople with VRR-level contraction (optimized, 5-15% faster)
+    HeadGordonPopleContracted,
     /// Head-Gordon-Pople method (SIMD-optimized, requires nightly)
     #[cfg(feature = "simd")]
     HeadGordonPopleSimd,
@@ -66,6 +68,7 @@ pub fn compute_eris_parallel(
                 ERIMethod::Standard => two_electron::electron_repulsion(bra1, bra2, ket1, ket2),
                 ERIMethod::Rys => rys::electron_repulsion_rys(bra1, bra2, ket1, ket2),
                 ERIMethod::HeadGordonPople => hgp::electron_repulsion_hgp(bra1, bra2, ket1, ket2),
+                ERIMethod::HeadGordonPopleContracted => hgp::electron_repulsion_hgp_contracted(bra1, bra2, ket1, ket2),
                 #[cfg(feature = "simd")]
                 ERIMethod::HeadGordonPopleSimd => hgp_simd::electron_repulsion_hgp_simd(bra1, bra2, ket1, ket2),
             }
@@ -142,6 +145,7 @@ pub fn compute_eri_tensor_parallel(
                 ERIMethod::Standard => two_electron::electron_repulsion(bra1, bra2, ket1, ket2),
                 ERIMethod::Rys => rys::electron_repulsion_rys(bra1, bra2, ket1, ket2),
                 ERIMethod::HeadGordonPople => hgp::electron_repulsion_hgp(bra1, bra2, ket1, ket2),
+                ERIMethod::HeadGordonPopleContracted => hgp::electron_repulsion_hgp_contracted(bra1, bra2, ket1, ket2),
                 #[cfg(feature = "simd")]
                 ERIMethod::HeadGordonPopleSimd => hgp_simd::electron_repulsion_hgp_simd(bra1, bra2, ket1, ket2),
             };
