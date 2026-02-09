@@ -15,16 +15,19 @@ pub enum BasisSet {
     STO3G,
     /// 6-31G: Split-valence double-zeta basis
     _631G,
-    /// 6-31G*: 6-31G with d polarization functions on heavy atoms
+    /// 6-31G*: 6-31G with d polarization on heavy atoms (aka 6-31G(d))
     _631GStar,
+    /// 6-31G**: 6-31G with d on heavy atoms and p on H/He (aka 6-31G(d,p)) - RECOMMENDED
+    _631GStarStar,
 }
 
 /// Create basis functions for an atom
 pub fn atom_basis(atom: &Atom, basis_set: BasisSet) -> Vec<CGBF> {
     match basis_set {
         BasisSet::STO3G => sto3g_basis(atom),
-        BasisSet::_631G => basis_631g(atom, false),
-        BasisSet::_631GStar => basis_631g(atom, true),
+        BasisSet::_631G => basis_631g(atom, false, false),
+        BasisSet::_631GStar => basis_631g(atom, true, false),
+        BasisSet::_631GStarStar => basis_631g(atom, true, true),
     }
 }
 
@@ -48,13 +51,13 @@ fn sto3g_basis(atom: &Atom) -> Vec<CGBF> {
     shells_to_cgbfs(atom.position, shells)
 }
 
-/// 6-31G or 6-31G* basis for a single atom
-fn basis_631g(atom: &Atom, include_polarization: bool) -> Vec<CGBF> {
+/// 6-31G, 6-31G*, or 6-31G** basis for a single atom
+fn basis_631g(atom: &Atom, include_d: bool, include_p: bool) -> Vec<CGBF> {
     let shells = get_631g_shells(atom.element.atomic_number);
     let mut basis = shells_to_cgbfs(atom.position, shells);
 
-    // Add d polarization functions for 6-31G*
-    if include_polarization {
+    // Add d polarization functions for 6-31G* and 6-31G**
+    if include_d {
         if let Some((d_exp, _n_funcs)) = get_d_polarization(atom.element.atomic_number) {
             // Add 6 cartesian d functions: dxx, dyy, dzz, dxy, dxz, dyz
             let d_shells = &[
@@ -68,7 +71,24 @@ fn basis_631g(atom: &Atom, include_polarization: bool) -> Vec<CGBF> {
                     shell,
                     primitives: vec![Primitive {
                         exponent: d_exp,
-                        coefficient: 1.0, // Normalization applied separately
+                        coefficient: 1.0,
+                    }],
+                });
+            }
+        }
+    }
+
+    // Add p polarization functions for 6-31G** (only on H and He)
+    if include_p {
+        if let Some((p_exp, _n_funcs)) = get_p_polarization(atom.element.atomic_number) {
+            // Add 3 p functions: px, py, pz
+            for &shell in &[(1, 0, 0), (0, 1, 0), (0, 0, 1)] {
+                basis.push(CGBF {
+                    origin: atom.position,
+                    shell,
+                    primitives: vec![Primitive {
+                        exponent: p_exp,
+                        coefficient: 1.0,
                     }],
                 });
             }
@@ -146,10 +166,23 @@ fn get_sto3g_shells(atomic_number: u32) -> &'static [ShellData] {
     match atomic_number {
         1 => H_STO3G,
         2 => HE_STO3G,
+        3 => LI_STO3G,
+        4 => BE_STO3G,
+        5 => B_STO3G,
         6 => C_STO3G,
         7 => N_STO3G,
         8 => O_STO3G,
-        _ => panic!("STO-3G not yet implemented for Z={}", atomic_number),
+        9 => F_STO3G,
+        10 => NE_STO3G,
+        11 => NA_STO3G,
+        12 => MG_STO3G,
+        13 => AL_STO3G,
+        14 => SI_STO3G,
+        15 => P_STO3G,
+        16 => S_STO3G,
+        17 => CL_STO3G,
+        18 => AR_STO3G,
+        _ => panic!("STO-3G not implemented for Z={}", atomic_number),
     }
 }
 
@@ -157,9 +190,24 @@ fn get_sto3g_shells(atomic_number: u32) -> &'static [ShellData] {
 fn get_631g_shells(atomic_number: u32) -> &'static [ShellData] {
     match atomic_number {
         1 => H_631G,
+        2 => HE_631G,
+        3 => LI_631G,
+        4 => BE_631G,
+        5 => B_631G,
         6 => C_631G,
+        7 => N_631G,
         8 => O_631G,
-        _ => panic!("6-31G not yet implemented for Z={}", atomic_number),
+        9 => F_631G,
+        10 => NE_631G,
+        11 => NA_631G,
+        12 => MG_631G,
+        13 => AL_631G,
+        14 => SI_631G,
+        15 => P_631G,
+        16 => S_631G,
+        17 => CL_631G,
+        18 => AR_631G,
+        _ => panic!("6-31G not implemented for Z={}", atomic_number),
     }
 }
 
@@ -265,5 +313,23 @@ mod tests {
         // 2 H: 2 each (no d) = 4
         // Total: 19
         assert_eq!(basis.len(), 19);
+    }
+
+    #[test]
+    fn test_water_631g_star_star() {
+        let h2o = Molecule::h2o();
+        let basis = build_basis(&h2o, BasisSet::_631GStarStar);
+        // O: 9 (from 6-31G) + 6 (d functions) = 15
+        // 2 H: 2 (from 6-31G) + 3 (p functions) each = 5 each = 10
+        // Total: 25
+        assert_eq!(basis.len(), 25);
+    }
+
+    #[test]
+    fn test_h2_631g_star_star() {
+        let h2 = Molecule::h2(1.4);
+        let basis = build_basis(&h2, BasisSet::_631GStarStar);
+        // 2 H: (2 s + 3 p) each = 5 each = 10 total
+        assert_eq!(basis.len(), 10);
     }
 }
