@@ -1,0 +1,616 @@
+# rmolints - Complete Documentation
+
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Installation](#installation)
+3. [Quick Start](#quick-start)
+4. [Capabilities](#capabilities)
+5. [Performance Analysis](#performance-analysis)
+6. [Algorithm Details](#algorithm-details)
+7. [Usage Examples](#usage-examples)
+8. [Testing](#testing)
+9. [Profiling and Optimization](#profiling-and-optimization)
+10. [Next Steps](#next-steps)
+
+---
+
+## Overview
+
+**rmolints** is a high-performance molecular integrals library written in Rust, ported from PyQuante2. It provides production-ready implementations of one-electron and two-electron repulsion integrals for quantum chemistry calculations.
+
+### Key Features
+
+- **Complete integral library**: All fundamental one- and two-electron integrals
+- **Multiple ERI algorithms**: Five different methods thoroughly benchmarked
+- **High accuracy**: Matches PyQuante2 reference to 1e-5 precision
+- **Excellent performance**: HGP-Opt method is 2x faster than alternatives
+- **Parallel computation**: Multithreaded ERI evaluation using Rayon
+- **Real molecule support**: H2, H2O, benzene with STO-3G basis sets
+- **Well-tested**: 48 comprehensive tests covering all modules
+
+### Project Status
+
+✅ **Complete and production-ready** for s, p, d orbitals with STO-3G basis sets.
+
+---
+
+## Installation
+
+### Requirements
+
+- **Rust**: 1.70 or later (stable)
+- **Optional**: Nightly Rust for SIMD features
+
+### Standard Build
+
+```bash
+# Clone repository
+git clone <repository-url>
+cd rmolints
+
+# Build in release mode (required for performance)
+cargo build --release
+
+# Run tests
+cargo test --release
+```
+
+### With SIMD (Optional, Nightly Required)
+
+SIMD provides marginal benefits on x86_64 but is slower on ARM hardware. Use only if you have confirmed benefits on your platform.
+
+```bash
+# Install nightly Rust
+rustup toolchain install nightly
+
+# Build with SIMD support
+cargo +nightly build --release --features simd
+
+# Run SIMD-specific benchmarks
+cargo +nightly run --release --features simd --example simd_benchmark
+```
+
+---
+
+## Quick Start
+
+### Basic Usage
+
+```rust
+use rmolints::common::*;
+use rmolints::{one_electron, hgp_opt};
+
+// Create s-orbital centered at origin
+let origin = Vec3::new(0.0, 0.0, 0.0);
+let s_orbital = CGBF {
+    origin,
+    shell: (0, 0, 0),  // s-orbital (l=m=n=0)
+    primitives: vec![Primitive {
+        exponent: 1.0,
+        coefficient: 1.0,
+    }],
+};
+
+// One-electron integrals
+let overlap = one_electron::overlap(&s_orbital, &s_orbital);
+let kinetic = one_electron::kinetic(&s_orbital, &s_orbital);
+let nuclear = one_electron::nuclear_attraction(&s_orbital, &s_orbital, &origin);
+
+// Two-electron integral (recommended method)
+let eri = hgp_opt::electron_repulsion_hgp_opt(&s_orbital, &s_orbital,
+                                               &s_orbital, &s_orbital);
+```
+
+### Parallel Computation
+
+```rust
+use rmolints::parallel::{compute_eri_tensor_parallel, ERIMethod};
+use rmolints::molecule::Molecule;
+use rmolints::basis::build_sto3g_basis;
+
+// Build basis set for water molecule
+let molecule = Molecule::h2o();
+let basis = build_sto3g_basis(&molecule);
+
+// Compute all unique ERIs in parallel (exploits 8-fold symmetry)
+let eris = compute_eri_tensor_parallel(&basis, ERIMethod::HeadGordonPopleOpt);
+
+// Returns Vec<(i, j, k, l, value)> for all unique integrals
+println!("Computed {} unique ERIs", eris.len());
+```
+
+### Running Benchmarks
+
+```bash
+# Comprehensive molecular benchmark
+cargo run --release --example molecule_benchmark
+
+# Orbital-level micro-benchmarks
+cargo run --release --example benchmark
+
+# Parallel vs serial comparison
+cargo run --release --example parallel_benchmark
+
+# Performance ratio analysis
+cargo run --release --example ratio_analysis
+```
+
+---
+
+## Capabilities
+
+### One-Electron Integrals
+
+All integrals use the Taketa-Huzinaga-O-ohata (THO) method:
+
+| Type | Function | Description |
+|------|----------|-------------|
+| **Overlap** | `overlap(bra, ket)` | ⟨bra\|ket⟩ |
+| **Kinetic** | `kinetic(bra, ket)` | ⟨bra\|T\|ket⟩ |
+| **Nuclear** | `nuclear_attraction(bra, ket, center)` | ⟨bra\|V\|ket⟩ |
+
+### Two-Electron Integrals (ERIs)
+
+Five methods available with different performance characteristics:
+
+| Method | Function | Performance | Status |
+|--------|----------|-------------|--------|
+| **HGP-Opt** | `hgp_opt::electron_repulsion_hgp_opt()` | **Fastest (baseline)** | 🏆 **Recommended** |
+| **Rys** | `rys::electron_repulsion_rys()` | 1.7x slower | Good alternative |
+| **Standard** | `two_electron::electron_repulsion()` | 2.2x slower | Reference impl |
+| **HGP-SIMD** | `hgp_simd::electron_repulsion_hgp_simd()` | ~Equal on ARM | Optional (nightly) |
+| **HGP Original** | `hgp::electron_repulsion_hgp()` | 7x slower | Deprecated ❌ |
+
+**Recommendation**: Use **HGP-Opt** for all production code.
+
+### Supported Molecules
+
+Built-in molecule definitions with STO-3G basis sets:
+
+```rust
+use rmolints::molecule::Molecule;
+
+let h2 = Molecule::h2(1.4);           // H2 with custom bond length
+let water = Molecule::h2o();          // H2O
+let benzene = Molecule::benzene();    // C6H6
+```
+
+### Angular Momentum Support
+
+- **Tested**: s, p, d orbitals (L ≤ 2)
+- **Theoretical**: Supports arbitrary angular momentum
+- **Basis sets**: Currently STO-3G only
+
+---
+
+## Performance Analysis
+
+### Benchmark Results (Benzene, 36 basis functions, 222,111 ERIs)
+
+**Parallel execution on multi-core system:**
+
+| Method | Time (ms) | Speedup vs Standard | Notes |
+|--------|-----------|---------------------|-------|
+| **HGP-Opt** | **815** | **2.16x** | 🏆 **Fastest - recommended** |
+| Rys (optimized) | 1,442 | 1.22x | Second best |
+| Standard THO | 1,761 | 1.00x | Baseline |
+| HGP Original | 5,702 | 0.31x | Deprecated |
+
+### Key Performance Learnings
+
+#### 1. Memory Layout Matters
+
+**Flat array vs nested structures**: The HGP-Opt method achieves a **2.4x speedup** over nested Vec storage by using:
+- Pre-allocated flat array with computed strides
+- Cache-optimal memory layout (stride-1 innermost loops)
+- Eliminated allocation overhead in hot loops
+
+#### 2. Algorithm Selection
+
+Different ERI methods have distinct performance profiles:
+
+- **HGP-Opt**: Best for all real-world molecules, scales well with size
+- **Rys**: Good for high angular momentum (d, f orbitals)
+- **Standard**: Simplest code, good reference implementation
+
+**Performance ratio (independent of system variance):**
+- Rys is 1.77x slower than HGP-Opt (stable across systems)
+- Standard is 2.16x slower than HGP-Opt (stable across systems)
+
+#### 3. SIMD Limitations
+
+SIMD vectorization (f64x4) provides **minimal benefit** for typical quantum chemistry integrals:
+
+**Why SIMD doesn't help:**
+- Small loop iterations (5-20) limit parallelism opportunity
+- Conditional branches require SIMD blending (overhead)
+- Memory already cache-optimal in scalar code
+- ARM NEON shows slower performance than scalar
+
+**Verdict**: Scalar HGP-Opt is simpler and faster. SIMD is optional for x86_64 experimentation.
+
+#### 4. Profiling Results
+
+CPU profiling identified the computational bottlenecks in HGP-Opt:
+
+- **VRR tensor computation**: 75-85% of total time
+  - Stage 6 (Y-direction): ~25-30% of VRR time
+  - Stage 7 (Z-direction): ~40-50% of VRR time
+- **HRR recursion**: ~10-15% of total time
+- **Helper functions** (Boys function, etc.): ~5-10% of total time
+
+**Optimization focus**: VRR stages 6-7 are the primary target for any future improvements.
+
+#### 5. Rys Optimizations
+
+Recent optimizations to Rys method achieved **~1.9x speedup**:
+
+1. **Flat GMatrix storage**: Replaced `Vec<Vec<f64>>` with flat array
+2. **Cached product centers**: Eliminated 75% of redundant Gaussian product calculations
+
+These optimizations brought Rys from 3.2x slower to 1.7x slower vs HGP-Opt.
+
+### Scaling Characteristics
+
+ERI computation scales as O(N⁴) with basis set size N:
+
+| Molecule | Basis Functions | Unique ERIs | Ratio |
+|----------|----------------|-------------|-------|
+| H2 | 2 | 6 | 3:1 |
+| H2O | 7 | 406 | 58:1 |
+| Benzene | 36 | 222,111 | 6,170:1 |
+
+**Parallel speedup**: ~3.4x on multi-core system (measured on benzene).
+
+---
+
+## Algorithm Details
+
+### Head-Gordon-Pople Optimized (HGP-Opt)
+
+The recommended method uses:
+
+1. **VRR (Vertical Recurrence Relation)**: Build intermediate tensor in 7 stages
+   - Stages 1-3: A-center recursion (x, y, z)
+   - Stages 4-7: C-center recursion (x, y, z)
+   - Flat array storage with pre-computed strides
+
+2. **HRR (Horizontal Recurrence Relation)**: Convert VRR tensor to final integrals
+   - Iterative implementation (not recursive)
+   - Minimal computational cost (~10-15% of time)
+
+**Key innovation**: Flat array VRR tensor eliminates HashMap overhead, achieving 7x speedup over original HGP.
+
+### Rys Quadrature
+
+Uses polynomial quadrature with Rys roots and weights:
+
+- Numerical quadrature of incomplete gamma function
+- Good for high angular momentum (L ≥ 3)
+- Recent optimizations: flat GMatrix storage, cached product centers
+
+**Reference**: Augspurger, Bernholdt, Dykstra, *J. Comp. Chem.* **11**(8), 972-977 (1990).
+
+### Standard THO Method
+
+Traditional recursive method from Taketa, Huzinaga, O-ohata:
+
+- Clear algorithm, easy to understand
+- B-array recursion with incomplete gamma function
+- Solid reference implementation
+
+**Reference**: Taketa, Huzinaga, O-ohata, *J. Phys. Soc. Japan* **21**, 2313 (1966).
+
+---
+
+## Usage Examples
+
+### Example 1: Water Molecule Energy Components
+
+```rust
+use rmolints::molecule::Molecule;
+use rmolints::basis::build_sto3g_basis;
+use rmolints::{one_electron, hgp_opt};
+
+fn main() {
+    // Build water molecule
+    let water = Molecule::h2o();
+    let basis = build_sto3g_basis(&water);
+    let n = basis.len();
+
+    println!("Water molecule: {} basis functions", n);
+
+    // Compute overlap matrix
+    let mut overlap = vec![vec![0.0; n]; n];
+    for i in 0..n {
+        for j in 0..n {
+            overlap[i][j] = one_electron::overlap(&basis[i], &basis[j]);
+        }
+    }
+
+    // Compute kinetic energy matrix
+    let mut kinetic = vec![vec![0.0; n]; n];
+    for i in 0..n {
+        for j in 0..n {
+            kinetic[i][j] = one_electron::kinetic(&basis[i], &basis[j]);
+        }
+    }
+
+    // Compute nuclear attraction matrix
+    let mut nuclear = vec![vec![0.0; n]; n];
+    for i in 0..n {
+        for j in 0..n {
+            let mut v_ij = 0.0;
+            for atom in &water.atoms {
+                v_ij += atom.Z * one_electron::nuclear_attraction(
+                    &basis[i], &basis[j], &atom.position
+                );
+            }
+            nuclear[i][j] = v_ij;
+        }
+    }
+
+    println!("One-electron integrals computed successfully!");
+}
+```
+
+### Example 2: Parallel ERI Computation
+
+```rust
+use rmolints::parallel::{compute_eri_tensor_parallel, ERIMethod};
+use rmolints::molecule::Molecule;
+use rmolints::basis::build_sto3g_basis;
+use std::time::Instant;
+
+fn main() {
+    let molecule = Molecule::h2o();
+    let basis = build_sto3g_basis(&molecule);
+
+    println!("Computing ERIs for {} basis functions...", basis.len());
+
+    let start = Instant::now();
+    let eris = compute_eri_tensor_parallel(&basis, ERIMethod::HeadGordonPopleOpt);
+    let elapsed = start.elapsed().as_millis();
+
+    println!("Computed {} unique ERIs in {} ms", eris.len(), elapsed);
+    println!("Average: {:.2} μs per integral",
+             elapsed as f64 * 1000.0 / eris.len() as f64);
+}
+```
+
+### Example 3: Method Comparison
+
+```rust
+use rmolints::parallel::{compute_eris_parallel, ERIMethod};
+use rmolints::common::*;
+use std::time::Instant;
+
+fn benchmark_method(basis: &[CGBF], indices: &[(usize, usize, usize, usize)],
+                    method: ERIMethod) -> f64 {
+    let start = Instant::now();
+    let _results = compute_eris_parallel(basis, indices, method);
+    start.elapsed().as_secs_f64() * 1000.0
+}
+
+fn main() {
+    // Create test basis and indices...
+
+    let hgp_time = benchmark_method(&basis, &indices, ERIMethod::HeadGordonPopleOpt);
+    let rys_time = benchmark_method(&basis, &indices, ERIMethod::Rys);
+    let std_time = benchmark_method(&basis, &indices, ERIMethod::Standard);
+
+    println!("HGP-Opt: {:.2} ms (baseline)", hgp_time);
+    println!("Rys:     {:.2} ms ({:.2}x)", rys_time, rys_time / hgp_time);
+    println!("Standard: {:.2} ms ({:.2}x)", std_time, std_time / hgp_time);
+}
+```
+
+---
+
+## Testing
+
+### Test Coverage
+
+```
+✅ 48/48 tests passing (100%)
+
+Breakdown:
+  - Utility functions:        11 tests
+  - One-electron integrals:   10 tests
+  - Two-electron (standard):   7 tests
+  - Rys quadrature:            3 tests
+  - Head-Gordon-Pople:         3 tests
+  - HGP Optimized:             3 tests
+  - Parallel computation:      7 tests
+  - Molecule support:          3 tests
+  - Basis sets:                1 test
+```
+
+### Running Tests
+
+```bash
+# Run all tests
+cargo test --release
+
+# Run specific module tests
+cargo test --release one_electron
+cargo test --release hgp_opt
+cargo test --release parallel
+
+# Run with output
+cargo test --release -- --nocapture
+```
+
+### Validation Strategy
+
+All implementations are validated against PyQuante2 reference values:
+
+- **Accuracy**: 1e-5 relative precision
+- **Coverage**: s, p, d orbital combinations
+- **Symmetry**: 8-fold permutational symmetry verified
+- **Edge cases**: Zero separation, large exponents, mixed angular momentum
+
+---
+
+## Profiling and Optimization
+
+### CPU Profiling
+
+Generate flamegraphs to identify bottlenecks:
+
+```bash
+# Parallel profiling (multi-threaded)
+cargo run --release --example profile_hgp_opt
+
+# Serial profiling (single-threaded, clearer results)
+cargo run --release --example profile_hgp_opt_serial
+
+# Open generated flamegraphs
+open flamegraph.svg
+open flamegraph_serial.svg
+```
+
+### Optimization History
+
+The project has undergone several major optimizations:
+
+1. **Nested Vec → Flat Array** (2.9x speedup)
+   - Replaced `Vec<Vec<...>>` with flat array + strides
+   - Improved cache locality in VRR tensor
+
+2. **HashMap → Flat Array** (2.4x additional speedup)
+   - Eliminated allocation overhead in hot loops
+   - Pre-computed array indices
+
+3. **Rys GMatrix Optimization** (1.9x speedup on Rys)
+   - Flat GMatrix storage
+   - Cached Gaussian product centers
+
+4. **SIMD Attempt** (no speedup on ARM)
+   - Implemented f64x4 vectorization
+   - Overhead dominated benefits for small loops
+
+**Total improvement**: 7x faster than original HGP implementation.
+
+### Performance Measurement Best Practices
+
+When benchmarking, account for system variance:
+
+1. **Use performance ratios** instead of absolute times
+2. **Run multiple iterations** and take minimum/average
+3. **Include warmup runs** to avoid JIT/cache effects
+4. **Compare on same system** to isolate changes
+
+See `examples/ratio_analysis.rs` for reference implementation.
+
+---
+
+## Next Steps
+
+### High Priority (Performance)
+
+1. **Larger Basis Sets**
+   - Implement 6-31G, 6-31G*, cc-pVDZ
+   - Extend STO-3G to more elements (currently H, C, N, O)
+   - Add basis set parsing from standard formats
+
+2. **Integral Screening**
+   - Skip near-zero integrals based on Schwarz inequality
+   - Critical for large molecules (100+ basis functions)
+   - Expected 10-100x speedup for sparse systems
+
+3. **Higher Angular Momentum**
+   - Thoroughly test f, g orbitals (L ≥ 4)
+   - Add complete Rys polynomial tables (currently simplified)
+   - Validate against reference codes
+
+### Medium Priority (Features)
+
+4. **Hartree-Fock Solver**
+   - SCF implementation using computed integrals
+   - DIIS convergence acceleration
+   - Demonstrate end-to-end quantum chemistry calculation
+
+5. **Density Functional Theory (DFT)**
+   - Exchange-correlation functionals (LDA, GGA)
+   - Numerical quadrature grids
+   - Hybrid functionals (B3LYP)
+
+6. **Gradient Integrals**
+   - Analytic derivatives of integrals
+   - Geometry optimization support
+   - Frequency calculations
+
+### Low Priority (Integration)
+
+7. **Python Bindings**
+   - PyO3 wrapper for Python interoperability
+   - NumPy integration for matrices
+   - Compare performance to PySCF, Psi4
+
+8. **GPU Offload**
+   - Move VRR computation to GPU (CUDA/ROCm)
+   - Batch processing for throughput
+   - Target 10-100x speedup for large systems
+
+9. **Benchmark vs Production Codes**
+   - Compare to Gaussian, ORCA, Psi4
+   - Validate correctness on standard test sets
+   - Publish performance comparisons
+
+### Infrastructure
+
+10. **Continuous Integration**
+    - Automated testing on multiple platforms
+    - Performance regression tracking
+    - Documentation generation
+
+11. **Extended Documentation**
+    - Tutorial for quantum chemistry beginners
+    - API documentation with examples
+    - Theory background for each method
+
+12. **Code Organization**
+    - Split large modules (rys.rs is 800+ lines)
+    - Reduce code duplication across methods
+    - Improve error handling and validation
+
+---
+
+## References
+
+### Original Publications
+
+- **THO**: Taketa, Huzinaga, O-ohata, "Gaussian-Expansion Methods for Molecular Integrals", *J. Phys. Soc. Japan* **21**, 2313 (1966).
+
+- **Rys**: Augspurger, Bernholdt, Dykstra, "Concise, open-ended implementation of Rys polynomial evaluation of two-electron integrals", *J. Comp. Chem.* **11**(8), 972-977 (1990).
+
+- **HGP**:
+  - Head-Gordon & Pople, "A method for two-electron Gaussian integral and integral derivative evaluation using recurrence relations", *J. Chem. Phys.* **89**(9), 5777 (1988).
+  - Gill, "Molecular Integrals Over Gaussian Basis Functions", *Adv. Q. Chem.* **25**, 141 (1994).
+  - Gill & Pople, "The Prism Algorithm for Two-Electron Integrals", *IJQC* **40**, 753 (1991).
+
+### Implementation References
+
+- **PyQuante2**: https://github.com/rpmuller/pyquante2
+- **Rust SIMD**: https://github.com/rust-lang/rust/issues/86656
+
+---
+
+## License
+
+Same as PyQuante2 (modified BSD license)
+
+---
+
+## Contributing
+
+Contributions welcome! Priority areas:
+
+1. Larger basis sets (6-31G family)
+2. Integral screening for large molecules
+3. Hartree-Fock solver implementation
+4. Validation against production codes
+
+Please include tests and benchmarks with all contributions.
