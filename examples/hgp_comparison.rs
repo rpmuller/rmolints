@@ -1,5 +1,5 @@
 use rmolints::common::*;
-use rmolints::{hgp, hgp};
+use rmolints::hgp;
 use std::time::Instant;
 
 fn s_orbital(alpha: f64, origin: Vec3) -> CGBF {

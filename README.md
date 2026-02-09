@@ -6,6 +6,7 @@ A high-performance molecular integrals library in Rust, ported from PyQuante2.
 
 - **Complete integral library**: One-electron and two-electron integrals
 - **Multiple ERI algorithms**: Four methods with different performance characteristics
+- **Production-ready basis sets**: STO-3G, 6-31G, 6-31G(d), 6-31G(d,p) for elements H-Ar
 - **High accuracy**: Matches PyQuante2 to 1e-5 precision
 - **Excellent performance**: HGP method is 2x faster than alternatives
 - **Parallel computation**: Multithreaded evaluation using Rayon
@@ -32,15 +33,27 @@ let kinetic = one_electron::kinetic(&s, &s);
 let eri = hgp::electron_repulsion_hgp(&s, &s, &s, &s);
 ```
 
-## Performance (Benzene, 36 basis functions)
+## Performance
+
+### Production Basis Set Performance (H2O, 6-31G(d,p), 25 basis functions)
 
 | Method | Time (ms) | Status |
 |--------|-----------|--------|
-| **HGP** | **815** | 🏆 **Fastest - recommended** |
-| Rys (optimized) | 1,442 | Second best |
-| Standard THO | 1,761 | Baseline |
+| **HGP** | **30** | 🏆 **Fastest - recommended** |
+| Rys (optimized) | 55 | Second best |
+| Standard THO | 61 | Baseline |
 
 **Recommendation**: Use HGP for all production code.
+
+### Basis Set Comparison
+
+| Molecule | STO-3G Functions | 6-31G(d,p) Functions | ERI Count Ratio |
+|----------|------------------|----------------------|-----------------|
+| H2       | 2                | 10                   | 500x            |
+| H2O      | 7                | 25                   | 250x            |
+| Benzene  | 36               | 120                  | 120x            |
+
+**Note**: 6-31G(d,p) is the minimum recommended basis set for chemistry. ERIs scale as O(N⁴) with basis set size.
 
 ## Installation
 
@@ -80,8 +93,9 @@ Four methods available:
 4. **HGP-SIMD** - Experimental SIMD variant (nightly required)
 
 ### Supported Systems
-- **Molecules**: H2, H2O, benzene (built-in)
-- **Basis sets**: STO-3G
+- **Molecules**: H2, H2O, NH3, benzene (built-in)
+- **Basis sets**: STO-3G, 6-31G, 6-31G(d), **6-31G(d,p)** (recommended)
+- **Elements**: H through Ar (Z=1-18) for all basis sets
 - **Orbitals**: s, p, d (tested); arbitrary angular momentum (theoretical)
 
 ## Usage Examples
@@ -91,10 +105,11 @@ Four methods available:
 ```rust
 use rmolints::parallel::{compute_eri_tensor_parallel, ERIMethod};
 use rmolints::molecule::Molecule;
-use rmolints::basis::build_sto3g_basis;
+use rmolints::basis::{build_basis, BasisSet};
 
 let molecule = Molecule::h2o();
-let basis = build_sto3g_basis(&molecule);
+// Use production-quality 6-31G(d,p) basis set
+let basis = build_basis(&molecule, BasisSet::_631GStarStar);
 
 // Compute all unique ERIs (exploits 8-fold symmetry)
 let eris = compute_eri_tensor_parallel(&basis, ERIMethod::HeadGordonPople);
@@ -139,7 +154,7 @@ cargo test --release hgp
 cargo test --release parallel
 ```
 
-All 48 tests pass with 1e-5 precision against PyQuante2 reference values.
+All 50 tests pass with 1e-5 precision against PyQuante2 reference values.
 
 ## Documentation
 

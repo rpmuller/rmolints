@@ -1,4 +1,4 @@
-use rmolints::basis::{basis_labels, build_sto3g_basis};
+use rmolints::basis::{basis_labels, build_sto3g_basis, BasisSet};
 use rmolints::molecule::Molecule;
 use rmolints::{one_electron, two_electron};
 
@@ -29,7 +29,7 @@ fn main() {
 
     // Build basis set
     let basis = build_sto3g_basis(&h2o);
-    let labels = basis_labels(&basis, &h2o);
+    let labels = basis_labels(&basis, &h2o, BasisSet::STO3G);
 
     println!("Basis set: STO-3G");
     println!("  Basis functions: {}", basis.len());
