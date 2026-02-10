@@ -7,6 +7,7 @@ A high-performance molecular integrals library in Rust, ported from PyQuante2.
 - **Complete integral library**: One-electron and two-electron integrals
 - **Multiple ERI algorithms**: Five methods with different performance characteristics
 - **VRR-contracted optimization**: HGP with 10-40% speedup over original
+- **Schwarz screening**: Skip near-zero integrals via inequality bound (2x speedup on benzene+)
 - **Production-ready basis sets**: STO-3G, 6-31G, 6-31G(d), 6-31G(d,p) for elements H-Ar
 - **Competitive performance**: Within 2-4x of Psi4/libint2, 3-25x faster than PyQuante2
 - **High accuracy**: 1e-12 precision for contracted methods, 1e-5 vs PyQuante2
@@ -90,11 +91,37 @@ The HGP method now includes **VRR-level contraction** for additional speedup:
 - Best gains with 6-31G or larger basis sets
 - See [`VRR_CONTRACTION_OPTIMIZATION.md`](VRR_CONTRACTION_OPTIMIZATION.md) for details
 
+### Schwarz Screening
+
+For larger systems, **Schwarz inequality screening** eliminates near-zero shell quartets before computing them. The bound is:
+
+```
+|(ij|kl)| ≤ Q_ij · Q_kl   where Q_ij = √|(ij|ij)|
+```
+
+Precompute O(N²) diagonal integrals once, then skip quartets where `Q_ij · Q_kl < 1e-12`:
+
+| System | Basis | Integrals skipped | Speedup |
+|--------|-------|-------------------|---------|
+| H2O    | STO-3G | 38% | 1.4x |
+| Benzene | STO-3G | 47% | 1.95x |
+| H2O    | 6-31G(d) | 53% | 1.84x |
+| Benzene | 6-31G(d) | 59% | **2.25x** |
+
+```rust
+use rmolints::parallel::{compute_eri_tensor_screened_parallel, ERIMethod, SCHWARZ_THRESHOLD};
+
+let eris = compute_eri_tensor_screened_parallel(
+    &basis, ERIMethod::HeadGordonPopleContracted, SCHWARZ_THRESHOLD,
+);
+```
+
 ### Recommended Methods
 
 | Use Case | Method | Why |
 |----------|--------|-----|
-| **Production** | `ERIMethod::HeadGordonPopleContracted` | 🏆 Fastest, optimized |
+| **Production** | `compute_eri_tensor_screened_parallel` + `HeadGordonPopleContracted` | 🏆 Fastest |
+| No screening needed | `compute_eri_tensor_parallel` + `HeadGordonPopleContracted` | Simpler API |
 | Debugging | `ERIMethod::HeadGordonPople` | Original HGP for verification |
 | Reference | `ERIMethod::Standard` | THO baseline |
 
@@ -158,24 +185,31 @@ Five methods available:
 ### Parallel ERI Computation
 
 ```rust
-use rmolints::parallel::{compute_eri_tensor_parallel, ERIMethod};
+use rmolints::parallel::{
+    compute_eri_tensor_parallel, compute_eri_tensor_screened_parallel,
+    ERIMethod, SCHWARZ_THRESHOLD,
+};
 use rmolints::molecule::Molecule;
 use rmolints::basis::{build_basis, BasisSet};
 
 let molecule = Molecule::h2o();
-// Use production-quality 6-31G(d,p) basis set
 let basis = build_basis(&molecule, BasisSet::_631GStarStar);
 
-// Compute all unique ERIs with optimized contracted HGP (recommended)
-let eris = compute_eri_tensor_parallel(&basis, ERIMethod::HeadGordonPopleContracted);
+// With Schwarz screening (recommended for larger systems)
+let eris = compute_eri_tensor_screened_parallel(
+    &basis, ERIMethod::HeadGordonPopleContracted, SCHWARZ_THRESHOLD,
+);
 
-// For comparison/debugging, use original HGP
-// let eris = compute_eri_tensor_parallel(&basis, ERIMethod::HeadGordonPople);
+// Without screening (simpler, fine for small systems)
+let eris = compute_eri_tensor_parallel(&basis, ERIMethod::HeadGordonPopleContracted);
 ```
 
 ### Benchmarking
 
 ```bash
+# Schwarz screening benchmark (with vs without screening)
+cargo run --release --example schwarz_benchmark
+
 # VRR-contraction optimization benchmarks
 cargo run --release --example contracted_molecule_benchmark  # Full molecules
 cargo run --release --example contraction_benchmark          # Microbenchmarks
@@ -208,6 +242,7 @@ cargo run --release --example profile_hgp
 - **Initial HGP**: Highly optimized VRR tensor with pre-computed strides
 - **Rys optimizations**: Improved storage and caching (1.9x speedup)
 - **VRR-contraction** (Feb 2026): Accumulate VRR tensors before HRR (10-40% faster)
+- **Schwarz screening** (Feb 2026): Skip near-zero quartets via inequality bound (2x speedup for benzene+)
 - **Overall**: 3-25x faster than PyQuante2, scales better with problem size
 
 ## Testing

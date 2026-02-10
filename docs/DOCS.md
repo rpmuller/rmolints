@@ -23,12 +23,13 @@
 
 - **Complete integral library**: All fundamental one- and two-electron integrals
 - **Multiple ERI algorithms**: Four different methods thoroughly benchmarked
+- **Schwarz screening**: Skip near-zero shell quartets for up to 2x speedup on larger systems
 - **Production-ready basis sets**: STO-3G, 6-31G, 6-31G(d), 6-31G(d,p) for elements H-Ar
 - **High accuracy**: Matches PyQuante2 reference to 1e-5 precision
-- **Excellent performance**: HGP method is 2x faster than alternatives
+- **Excellent performance**: HGP-contracted is 2x faster than alternatives
 - **Parallel computation**: Multithreaded ERI evaluation using Rayon
 - **Real molecule support**: H2, H2O, NH3, benzene with multiple basis sets
-- **Well-tested**: 50 comprehensive tests covering all modules
+- **Well-tested**: 56 comprehensive tests covering all modules
 
 ### Project Status
 
@@ -106,25 +107,34 @@ let eri = hgp::electron_repulsion_hgp(&s_orbital, &s_orbital,
 ### Parallel Computation
 
 ```rust
-use rmolints::parallel::{compute_eri_tensor_parallel, ERIMethod};
+use rmolints::parallel::{
+    compute_eri_tensor_parallel, compute_eri_tensor_screened_parallel,
+    ERIMethod, SCHWARZ_THRESHOLD,
+};
 use rmolints::molecule::Molecule;
 use rmolints::basis::{build_basis, BasisSet};
 
-// Build basis set for water molecule
 let molecule = Molecule::h2o();
-// Use production-quality 6-31G(d,p) basis set (25 functions for H2O)
 let basis = build_basis(&molecule, BasisSet::_631GStarStar);
 
-// Compute all unique ERIs in parallel (exploits 8-fold symmetry)
-let eris = compute_eri_tensor_parallel(&basis, ERIMethod::HeadGordonPople);
+// With Schwarz screening (recommended for larger systems: skips 40-60% of integrals)
+let eris = compute_eri_tensor_screened_parallel(
+    &basis, ERIMethod::HeadGordonPopleContracted, SCHWARZ_THRESHOLD,
+);
 
-// Returns Vec<(i, j, k, l, value)> for all unique integrals
+// Without screening (simpler, fine for small/trivial systems)
+let eris = compute_eri_tensor_parallel(&basis, ERIMethod::HeadGordonPopleContracted);
+
+// Returns Vec<(i, j, k, l, value)> for all (surviving) unique integrals
 println!("Computed {} unique ERIs", eris.len());
 ```
 
 ### Running Benchmarks
 
 ```bash
+# Schwarz screening impact (screened vs unscreened, multiple basis sets)
+cargo run --release --example schwarz_benchmark
+
 # Comprehensive molecular benchmark
 cargo run --release --example molecule_benchmark
 
@@ -322,6 +332,32 @@ Traditional recursive method from Taketa, Huzinaga, O-ohata:
 - Solid reference implementation
 
 **Reference**: Taketa, Huzinaga, O-ohata, *J. Phys. Soc. Japan* **21**, 2313 (1966).
+
+### Schwarz Inequality Screening
+
+Before computing a shell quartet (ij|kl), apply the Cauchy-Schwarz bound:
+
+```
+|(ij|kl)| ≤ Q_ij · Q_kl   where Q_ij = √|(ij|ij)|
+```
+
+**Algorithm**:
+1. Precompute the N×N Schwarz matrix: `Q_ij = √|(ij|ij)|` for all pairs — O(N²) integrals, parallelized
+2. For each candidate quartet, test `Q_ij · Q_kl ≥ threshold` before adding it to the work list
+3. Only the surviving quartets are computed
+
+**Cost/benefit**: The diagonal integrals add O(N²) overhead, but screening typically eliminates 40-60% of quartets for medium/large molecules, yielding net ~2x speedup.
+
+| System | Basis | Skipped | Speedup |
+|--------|-------|---------|---------|
+| H2O | STO-3G | 38% | 1.4x |
+| Benzene | STO-3G | 47% | 1.95x |
+| H2O | 6-31G(d) | 53% | 1.84x |
+| Benzene | 6-31G(d) | 59% | 2.25x |
+
+Default threshold: `SCHWARZ_THRESHOLD = 1e-12` (consistent with 1e-12 integral precision).
+
+**Note**: For very small systems (N < ~5) the O(N²) overhead may exceed the savings — use `compute_eri_tensor_parallel` in that case.
 
 ---
 

@@ -195,6 +195,114 @@ pub fn compute_eri_tensor_full_parallel(
     tensor
 }
 
+/// Default threshold for Schwarz screening (matches 1e-12 precision goal)
+pub const SCHWARZ_THRESHOLD: f64 = 1e-12;
+
+/// Compute the Schwarz screening matrix Q_ij = sqrt(|(ij|ij)|) for all pairs
+///
+/// Used for Schwarz inequality screening: |(ij|kl)| <= Q_ij * Q_kl
+///
+/// # Arguments
+/// * `basis` - Slice of contracted Gaussian basis functions
+/// * `method` - Which ERI method to use for the diagonal integrals
+///
+/// # Returns
+/// Flat n×n matrix (stored row-major) of Q_ij values
+pub fn compute_schwarz_matrix(basis: &[CGBF], method: ERIMethod) -> Vec<f64> {
+    let n = basis.len();
+
+    // Collect unique pairs (i >= j) to avoid redundant computation
+    let pairs: Vec<(usize, usize)> = (0..n)
+        .flat_map(|i| (0..=i).map(move |j| (i, j)))
+        .collect();
+
+    let q_values: Vec<f64> = pairs
+        .par_iter()
+        .map(|&(i, j)| {
+            let bi = &basis[i];
+            let bj = &basis[j];
+            let val = match method {
+                ERIMethod::Standard => two_electron::electron_repulsion(bi, bj, bi, bj),
+                ERIMethod::Rys => rys::electron_repulsion_rys(bi, bj, bi, bj),
+                ERIMethod::HeadGordonPople => hgp::electron_repulsion_hgp(bi, bj, bi, bj),
+                ERIMethod::HeadGordonPopleContracted => hgp::electron_repulsion_hgp_contracted(bi, bj, bi, bj),
+                #[cfg(feature = "simd")]
+                ERIMethod::HeadGordonPopleSimd => hgp_simd::electron_repulsion_hgp_simd(bi, bj, bi, bj),
+            };
+            val.abs().sqrt()
+        })
+        .collect();
+
+    // Fill symmetric n×n matrix
+    let mut q = vec![0.0_f64; n * n];
+    for (idx, &(i, j)) in pairs.iter().enumerate() {
+        q[i * n + j] = q_values[idx];
+        q[j * n + i] = q_values[idx];
+    }
+    q
+}
+
+/// Compute all unique two-electron integrals with Schwarz inequality screening
+///
+/// Uses the bound |(ij|kl)| <= Q_ij * Q_kl where Q_ij = sqrt(|(ij|ij)|).
+/// Shell quartets where Q_ij * Q_kl < threshold are skipped entirely.
+///
+/// # Arguments
+/// * `basis` - Slice of contracted Gaussian basis functions
+/// * `method` - Which ERI method to use
+/// * `threshold` - Skip quartets where Q_ij * Q_kl < threshold (use `SCHWARZ_THRESHOLD`)
+///
+/// # Returns
+/// Vector of (i, j, k, l, value) tuples for integrals that passed screening
+pub fn compute_eri_tensor_screened_parallel(
+    basis: &[CGBF],
+    method: ERIMethod,
+    threshold: f64,
+) -> Vec<(usize, usize, usize, usize, f64)> {
+    let n = basis.len();
+    let q = compute_schwarz_matrix(basis, method);
+
+    // Generate unique quartets that pass the Schwarz screen
+    let mut indices = Vec::new();
+    for i in 0..n {
+        for j in 0..=i {
+            let ij = i * (i + 1) / 2 + j;
+            let q_ij = q[i * n + j];
+            for k in 0..=i {
+                let l_max = if k == i { j } else { k };
+                for l in 0..=l_max {
+                    let kl = k * (k + 1) / 2 + l;
+                    if ij >= kl && q_ij * q[k * n + l] >= threshold {
+                        indices.push((i, j, k, l));
+                    }
+                }
+            }
+        }
+    }
+
+    // Compute surviving integrals in parallel
+    indices
+        .par_iter()
+        .map(|&(i, j, k, l)| {
+            let bra1 = &basis[i];
+            let bra2 = &basis[j];
+            let ket1 = &basis[k];
+            let ket2 = &basis[l];
+
+            let value = match method {
+                ERIMethod::Standard => two_electron::electron_repulsion(bra1, bra2, ket1, ket2),
+                ERIMethod::Rys => rys::electron_repulsion_rys(bra1, bra2, ket1, ket2),
+                ERIMethod::HeadGordonPople => hgp::electron_repulsion_hgp(bra1, bra2, ket1, ket2),
+                ERIMethod::HeadGordonPopleContracted => hgp::electron_repulsion_hgp_contracted(bra1, bra2, ket1, ket2),
+                #[cfg(feature = "simd")]
+                ERIMethod::HeadGordonPopleSimd => hgp_simd::electron_repulsion_hgp_simd(bra1, bra2, ket1, ket2),
+            };
+
+            (i, j, k, l, value)
+        })
+        .collect()
+}
+
 /// Compute two-electron integrals for specified basis function pairs in parallel
 ///
 /// More flexible than `compute_eri_tensor_parallel` - you specify exactly which
