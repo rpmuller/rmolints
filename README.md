@@ -116,12 +116,31 @@ let eris = compute_eri_tensor_screened_parallel(
 );
 ```
 
+### Rys Quadrature Optimization
+
+The Rys method received major hot-path optimizations that eliminated heap allocations and redundant computation, achieving a **1.8–2.3x speedup**:
+
+| Molecule | Before (ms) | After (ms) | Speedup | vs HGP Contracted |
+|----------|-------------|------------|---------|---------------------|
+| H2       | 0.118       | 0.094      | 1.3x    | 0.84x (faster) |
+| H2O      | 1.187       | 0.676      | 1.8x    | 0.71x (faster) |
+| NH3      | 1.782       | 0.937      | 1.9x    | 0.69x (faster) |
+| Benzene  | 532         | 232        | 2.3x    | 0.69x (faster) |
+
+**Key changes:**
+- Pre-allocate GMatrix once per contracted integral, reuse across all primitive quartets
+- Stack-allocated Rys roots/weights (fixed-size arrays instead of `Vec`)
+- Hoist normalization out of 4-nested primitive loop
+
+Rys is now the **fastest ERI method** across all test molecules.
+
 ### Recommended Methods
 
 | Use Case | Method | Why |
 |----------|--------|-----|
-| **Production** | `compute_eri_tensor_screened_parallel` + `HeadGordonPopleContracted` | 🏆 Fastest |
-| No screening needed | `compute_eri_tensor_parallel` + `HeadGordonPopleContracted` | Simpler API |
+| **Production** | `compute_eri_tensor_screened_parallel` + `Rys` | 🏆 Fastest |
+| No screening needed | `compute_eri_tensor_parallel` + `Rys` | Simpler API |
+| Alternative | `ERIMethod::HeadGordonPopleContracted` | Competitive, VRR-contracted |
 | Debugging | `ERIMethod::HeadGordonPople` | Original HGP for verification |
 | Reference | `ERIMethod::Standard` | THO baseline |
 
@@ -168,9 +187,9 @@ cargo +nightly build --release --features simd
 ### Two-Electron Integrals
 
 Five methods available:
-1. **HGP-Contracted** - 🏆 **Fastest, production recommended** (VRR-level contraction)
-2. **HGP** - Fast, original implementation (Head-Gordon-Pople)
-3. **Rys** - Good for high angular momentum (quadrature)
+1. **Rys** - 🏆 **Fastest, production recommended** (optimized quadrature, ~30% faster than HGP)
+2. **HGP-Contracted** - Fast, VRR-level contraction (Head-Gordon-Pople)
+3. **HGP** - Original HGP implementation
 4. **Standard** - Reference implementation (THO)
 5. **HGP-SIMD** - Experimental SIMD variant (nightly required)
 
@@ -207,6 +226,9 @@ let eris = compute_eri_tensor_parallel(&basis, ERIMethod::HeadGordonPopleContrac
 ### Benchmarking
 
 ```bash
+# Rys optimization benchmark (Rys vs HGP on multiple molecules)
+cargo run --release --example rys_optimization_benchmark
+
 # Schwarz screening benchmark (with vs without screening)
 cargo run --release --example schwarz_benchmark
 
@@ -240,9 +262,10 @@ cargo run --release --example profile_hgp
 ### Optimization History
 
 - **Initial HGP**: Highly optimized VRR tensor with pre-computed strides
-- **Rys optimizations**: Improved storage and caching (1.9x speedup)
+- **Rys optimizations (v1)**: Improved storage and caching (1.9x speedup)
 - **VRR-contraction** (Feb 2026): Accumulate VRR tensors before HRR (10-40% faster)
 - **Schwarz screening** (Feb 2026): Skip near-zero quartets via inequality bound (2x speedup for benzene+)
+- **Rys hot-path optimization** (Feb 2026): Eliminate heap allocations, hoist normalization (1.8-2.3x speedup, Rys now fastest method)
 - **Overall**: 3-25x faster than PyQuante2, scales better with problem size
 
 ## Testing
