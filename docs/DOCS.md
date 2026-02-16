@@ -331,7 +331,24 @@ Uses polynomial quadrature with Rys roots and weights:
 - Optimizations: GMatrix reuse, stack-allocated roots/weights, hoisted normalization
 - Zero heap allocations in the hot primitive loop
 
-**Reference**: Augspurger, Bernholdt, Dykstra, *J. Comp. Chem.* **11**(8), 972-977 (1990).
+**Root table coverage:**
+
+| n | Orbitals | Implementation |
+|---|----------|----------------|
+| 1–3 | s, p | `Root123` — GAMESS polynomial tables |
+| 4 | d×d | `Root4` — GAMESS polynomial tables |
+| 5 | d×d×d | `Root5` — GAMESS polynomial tables |
+| 6–7 | f orbitals | `Root6` — Golub-Welsch (numerical) |
+
+For n ≥ 6 (f orbitals and above), roots and weights are computed via the
+Golub-Welsch algorithm: Boys function moments → modified Chebyshev recurrence
+→ symmetric tridiagonal Jacobi matrix → TQLI eigendecomposition. Numerically
+stable through n = 7, which covers all (ff|ff) integral types.
+
+**References**:
+- Augspurger, Bernholdt, Dykstra, *J. Comp. Chem.* **11**(8), 972–977 (1990).
+- Golub & Welsch, *Math. Comp.* **23** (1969) 221–230.
+- Gautschi, *Orthogonal Polynomials: Computation and Approximation* (2004), Algorithm 1.5.
 
 ### Standard THO Method
 
@@ -577,10 +594,11 @@ See `examples/ratio_analysis.rs` for reference implementation.
 
 ### High Priority (Performance)
 
-1. **Higher Angular Momentum (f, g orbitals)**
-   - Implement `Root6` polynomial tables for Rys quadrature (n ≥ 6), required for f orbitals and above
-   - Thoroughly test d, f, g orbital combinations with 6-31G(d,p) and larger basis sets
-   - Validate against reference codes (Psi4, ORCA)
+1. **Higher Angular Momentum validation**
+   - Rys quadrature now supports n ≤ 7 (covers all f-orbital integrals) via Golub-Welsch
+   - Thoroughly test f orbital combinations with 6-31G(d,p) and cc-pVTZ basis sets
+   - Validate f-orbital integral values against reference codes (Psi4, ORCA)
+   - g orbital support (n ≤ 9) would require a more numerically stable root algorithm
 
 2. **Extended Basis Sets**
    - Add cc-pVDZ, cc-pVTZ, aug-cc-pVDZ (Dunning correlation-consistent)
