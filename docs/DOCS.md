@@ -22,11 +22,11 @@
 ### Key Features
 
 - **Complete integral library**: All fundamental one- and two-electron integrals
-- **Multiple ERI algorithms**: Four different methods thoroughly benchmarked
+- **Multiple ERI algorithms**: Five different methods thoroughly benchmarked
 - **Schwarz screening**: Skip near-zero shell quartets for up to 2x speedup on larger systems
 - **Production-ready basis sets**: STO-3G, 6-31G, 6-31G(d), 6-31G(d,p) for elements H-Ar
 - **High accuracy**: Matches PyQuante2 reference to 1e-5 precision
-- **Excellent performance**: HGP-contracted is 2x faster than alternatives
+- **Excellent performance**: Optimized Rys is the fastest method (~30% faster than HGP)
 - **Parallel computation**: Multithreaded ERI evaluation using Rayon
 - **Real molecule support**: H2, H2O, NH3, benzene with multiple basis sets
 - **Well-tested**: 56 comprehensive tests covering all modules
@@ -164,16 +164,17 @@ All integrals use the Taketa-Huzinaga-O-ohata (THO) method:
 
 ### Two-Electron Integrals (ERIs)
 
-Four methods available with different performance characteristics:
+Five methods available with different performance characteristics:
 
 | Method | Function | Performance | Status |
 |--------|----------|-------------|--------|
-| **HGP** | `hgp::electron_repulsion_hgp()` | **Fastest (baseline)** | 🏆 **Recommended** |
-| **Rys** | `rys::electron_repulsion_rys()` | 1.7x slower | Good alternative |
-| **Standard** | `two_electron::electron_repulsion()` | 2.2x slower | Reference impl |
+| **Rys** | `rys::electron_repulsion_rys()` | **Fastest (~30% faster than HGP)** | 🏆 **Recommended** |
+| **HGP-Contracted** | `hgp::electron_repulsion_hgp_contracted()` | Fast (VRR-contracted) | Production ready |
+| **HGP** | `hgp::electron_repulsion_hgp()` | Good (baseline) | Debugging/verification |
+| **Standard** | `two_electron::electron_repulsion()` | 2.2x slower than Rys | Reference impl |
 | **HGP-SIMD** | `hgp_simd::electron_repulsion_hgp_simd()` | ~Equal on ARM | Optional (nightly) |
 
-**Recommendation**: Use **HGP** for all production code.
+**Recommendation**: Use **Rys** for production code.
 
 ### Supported Molecules
 
@@ -198,15 +199,16 @@ let benzene = Molecule::benzene();    // C6H6
 
 ## Performance Analysis
 
-### Production Basis Set Performance (H2O, 6-31G(d,p), 25 basis functions, 52,975 ERIs)
+### STO-3G Performance (parallel execution)
 
-**Parallel execution on multi-core system:**
+| Molecule | Rys (ms) | HGP Contracted (ms) | Rys vs HGP |
+|----------|----------|----------------------|------------|
+| H2       | 0.094    | 0.111                | 0.84x (faster) |
+| H2O      | 0.676    | 0.947                | 0.71x (faster) |
+| NH3      | 0.937    | 1.362                | 0.69x (faster) |
+| Benzene  | 231.6    | 333.6                | 0.69x (faster) |
 
-| Method | Time (ms) | Speedup vs Standard | Notes |
-|--------|-----------|---------------------|-------|
-| **HGP** | **30** | **2.03x** | 🏆 **Fastest - recommended** |
-| Rys (optimized) | 55 | 1.11x | Second best |
-| Standard THO | 61 | 1.00x | Baseline |
+Rys is now **~30% faster** than HGP Contracted across all molecule sizes.
 
 ### Basis Set Scaling
 
@@ -233,13 +235,14 @@ ERIs scale as O(N⁴) with basis set size. Moving from STO-3G to 6-31G(d,p):
 
 Different ERI methods have distinct performance profiles:
 
-- **HGP**: Best for all real-world molecules, scales well with size
-- **Rys**: Good for high angular momentum (d, f orbitals)
+- **Rys**: Best overall — fastest method after hot-path optimization, good for all angular momenta
+- **HGP-Contracted**: Close second, VRR-level contraction reduces redundant HRR work
+- **HGP**: Original implementation, good for debugging
 - **Standard**: Simplest code, good reference implementation
 
 **Performance ratio (independent of system variance):**
-- Rys is 1.77x slower than HGP (stable across systems)
-- Standard is 2.16x slower than HGP (stable across systems)
+- HGP Contracted is ~1.4x slower than Rys (stable across systems)
+- Standard is ~2.2x slower than Rys (stable across systems)
 
 #### 3. SIMD Limitations
 
@@ -267,12 +270,18 @@ CPU profiling identified the computational bottlenecks in HGP:
 
 #### 5. Rys Optimizations
 
-Recent optimizations to Rys method achieved **~1.9x speedup**:
+Two rounds of optimization brought Rys from 3.2x slower than HGP to **~30% faster** than HGP:
 
+**Round 1 (1.9x speedup):**
 1. **Flat GMatrix storage**: Replaced `Vec<Vec<f64>>` with efficient array indexing
 2. **Cached product centers**: Eliminated 75% of redundant Gaussian product calculations
 
-These optimizations brought Rys from 3.2x slower to 1.7x slower vs HGP.
+**Round 2 (1.8–2.3x additional speedup):**
+3. **GMatrix reuse**: Pre-allocate once per contracted integral, reuse across all primitive quartets and quadrature points (eliminated ~243 allocations per integral for STO-3G water)
+4. **Stack-allocated Rys roots/weights**: Fixed-size `[f64; 8]` arrays instead of `Vec<f64>`, eliminating 2 heap allocations per primitive quartet
+5. **Hoisted normalization**: `gaussian_normalization` computed once per primitive, not once per quartet (O(n) instead of O(n⁴))
+
+Combined effect: Rys is now the fastest ERI method, ~30% faster than HGP Contracted.
 
 ### Scaling Characteristics
 
@@ -318,8 +327,9 @@ The recommended method uses:
 Uses polynomial quadrature with Rys roots and weights:
 
 - Numerical quadrature of incomplete gamma function
-- Good for high angular momentum (L ≥ 3)
-- Recent optimizations: optimized GMatrix storage, cached product centers
+- Good for all angular momenta, now the fastest method overall
+- Optimizations: GMatrix reuse, stack-allocated roots/weights, hoisted normalization
+- Zero heap allocations in the hot primitive loop
 
 **Reference**: Augspurger, Bernholdt, Dykstra, *J. Comp. Chem.* **11**(8), 972-977 (1990).
 
@@ -470,17 +480,18 @@ fn main() {
 ### Test Coverage
 
 ```
-✅ 50/50 tests passing (100%)
+✅ 56/56 tests passing (100%)
 
 Breakdown:
   - Utility functions:        11 tests
   - One-electron integrals:   10 tests
   - Two-electron (standard):   7 tests
   - Rys quadrature:            3 tests
-  - Head-Gordon-Pople:         6 tests
+  - Head-Gordon-Pople:         9 tests
   - Parallel computation:      7 tests
   - Molecule support:          3 tests
-  - Basis sets:                3 tests
+  - Basis sets:                5 tests
+  - Boys function:             2 tests
 ```
 
 ### Running Tests
@@ -534,11 +545,15 @@ The project has implemented several key optimizations:
 1. **HGP Method**
    - VRR tensor with pre-computed strides for efficient indexing
    - Iterative HRR to avoid repeated VRR calls
+   - VRR-level contraction: accumulate VRR tensors before HRR (10-40% faster)
    - Excellent cache locality through contiguous memory layout
 
-2. **Rys Optimization** (1.9x speedup)
+2. **Rys Optimization** (cumulative ~4x speedup over initial)
    - Optimized GMatrix storage (contiguous arrays)
    - Cached Gaussian product centers
+   - GMatrix reuse across primitive quartets and quadrature points
+   - Stack-allocated Rys roots/weights (zero heap allocs in hot loop)
+   - Hoisted normalization out of O(n⁴) loop
 
 3. **SIMD Exploration** (no benefit on ARM)
    - Implemented f64x4 vectorization

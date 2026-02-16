@@ -11,6 +11,16 @@ use crate::common::{CGBF, Vec3};
 use crate::utils::{gaussian_normalization, gaussian_product_center};
 use std::f64::consts::PI;
 
+/// Maximum Rys quadrature order supported (covers up to f orbitals)
+const MAX_RYS_ORDER: usize = 8;
+
+/// Stack-allocated Rys roots and weights to avoid heap allocation
+struct RysRootsWeights {
+    roots: [f64; MAX_RYS_ORDER],
+    weights: [f64; MAX_RYS_ORDER],
+    n: usize,
+}
+
 /// Flat array storage for G matrix to avoid nested Vec allocations
 /// Stores G[n][m] in row-major order: index = n * (m_max + 1) + m
 struct GMatrix {
@@ -53,24 +63,42 @@ pub fn electron_repulsion_rys(bra1: &CGBF, bra2: &CGBF, ket1: &CGBF, ket2: &CGBF
     let (lc, mc, nc) = ket1.shell;
     let (ld, md, nd) = ket2.shell;
 
-    for p1 in &bra1.primitives {
-        for p2 in &bra2.primitives {
-            for p3 in &ket1.primitives {
-                for p4 in &ket2.primitives {
-                    let norm_a = gaussian_normalization(p1.exponent, la, ma, na);
-                    let norm_b = gaussian_normalization(p2.exponent, lb, mb, nb);
-                    let norm_c = gaussian_normalization(p3.exponent, lc, mc, nc);
-                    let norm_d = gaussian_normalization(p4.exponent, ld, md, nd);
+    // Pre-compute normalization factors outside inner loops
+    let norms_a: Vec<f64> = bra1.primitives.iter()
+        .map(|p| gaussian_normalization(p.exponent, la, ma, na))
+        .collect();
+    let norms_b: Vec<f64> = bra2.primitives.iter()
+        .map(|p| gaussian_normalization(p.exponent, lb, mb, nb))
+        .collect();
+    let norms_c: Vec<f64> = ket1.primitives.iter()
+        .map(|p| gaussian_normalization(p.exponent, lc, mc, nc))
+        .collect();
+    let norms_d: Vec<f64> = ket2.primitives.iter()
+        .map(|p| gaussian_normalization(p.exponent, ld, md, nd))
+        .collect();
 
-                    sum += p1.coefficient
+    // Pre-allocate GMatrix for the maximum dimensions needed across x, y, z
+    // n = max(la+lb, ma+mb, na+nb), m = max(lc+ld, mc+md, nc+nd)
+    let n_max = (la + lb).max(ma + mb).max(na + nb) as usize;
+    let m_max = (lc + ld).max(mc + md).max(nc + nd) as usize;
+    let mut g = GMatrix::new(n_max, m_max);
+
+    for (i1, p1) in bra1.primitives.iter().enumerate() {
+        for (i2, p2) in bra2.primitives.iter().enumerate() {
+            for (i3, p3) in ket1.primitives.iter().enumerate() {
+                for (i4, p4) in ket2.primitives.iter().enumerate() {
+                    let weight = p1.coefficient
                         * p2.coefficient
                         * p3.coefficient
                         * p4.coefficient
-                        * norm_a
-                        * norm_b
-                        * norm_c
-                        * norm_d
+                        * norms_a[i1]
+                        * norms_b[i2]
+                        * norms_c[i3]
+                        * norms_d[i4];
+
+                    sum += weight
                         * coulomb_repulsion_rys(
+                            &mut g,
                             bra1.origin,
                             bra1.shell,
                             p1.exponent,
@@ -97,6 +125,7 @@ pub fn electron_repulsion_rys(bra1: &CGBF, bra2: &CGBF, ket1: &CGBF, ket2: &CGBF
 /// Form coulomb repulsion integral by Rys quadrature (ABD method)
 #[allow(clippy::too_many_arguments)]
 fn coulomb_repulsion_rys(
+    g: &mut GMatrix,
     a: Vec3,
     lmn_a: (i32, i32, i32),
     alpha_a: f64,
@@ -127,31 +156,31 @@ fn coulomb_repulsion_rys(
     let px = gaussian_product_center(alpha_a, a.x, alpha_b, b.x);
     let py = gaussian_product_center(alpha_a, a.y, alpha_b, b.y);
     let pz = gaussian_product_center(alpha_a, a.z, alpha_b, b.z);
-    let p = Vec3::new(px, py, pz);
 
     let qx = gaussian_product_center(alpha_c, c.x, alpha_d, d.x);
     let qy = gaussian_product_center(alpha_c, c.y, alpha_d, d.y);
     let qz = gaussian_product_center(alpha_c, c.z, alpha_d, d.z);
+
+    let p = Vec3::new(px, py, pz);
     let q = Vec3::new(qx, qy, qz);
 
     let rpq2 = p.distance_squared(&q);
     let x_rys = rpq2 * rho;
 
-    // Get Rys roots and weights
-    let (roots, weights) = rys_roots(norder, x_rys);
+    // Get Rys roots and weights (stack-allocated)
+    let rw = rys_roots(norder, x_rys);
 
-    // Sum over quadrature points
-    // Pass pre-computed values to avoid recomputation in int_1d
+    // Sum over quadrature points, reusing the pre-allocated GMatrix
     let mut sum = 0.0;
-    for i in 0..roots.len() {
-        let t = roots[i];
-        let ix = int_1d(t, la, lb, lc, ld, a.x, b.x, c.x, d.x,
+    for i in 0..rw.n {
+        let t = rw.roots[i];
+        let ix = int_1d(g, t, la, lb, lc, ld, a.x, b.x, c.x, d.x,
                        px, qx, gamma_ab, gamma_cd, alpha_a, alpha_b, alpha_c, alpha_d);
-        let iy = int_1d(t, ma, mb, mc, md, a.y, b.y, c.y, d.y,
+        let iy = int_1d(g, t, ma, mb, mc, md, a.y, b.y, c.y, d.y,
                        py, qy, gamma_ab, gamma_cd, alpha_a, alpha_b, alpha_c, alpha_d);
-        let iz = int_1d(t, na, nb, nc, nd, a.z, b.z, c.z, d.z,
+        let iz = int_1d(g, t, na, nb, nc, nd, a.z, b.z, c.z, d.z,
                        pz, qz, gamma_ab, gamma_cd, alpha_a, alpha_b, alpha_c, alpha_d);
-        sum += ix * iy * iz * weights[i]; // ABD eq 5 & 9
+        sum += ix * iy * iz * rw.weights[i]; // ABD eq 5 & 9
     }
 
     2.0 * (rho / PI).sqrt() * sum // ABD eq 5 & 9
@@ -160,9 +189,10 @@ fn coulomb_repulsion_rys(
 /// One-dimensional integral using Rys quadrature
 ///
 /// Computes the one-dimensional component of the ERI at Rys quadrature point t
-/// Takes pre-computed product centers and gamma values to avoid redundant computation
+/// Takes pre-allocated GMatrix and pre-computed product centers/gamma values
 #[allow(clippy::too_many_arguments)]
 fn int_1d(
+    g: &mut GMatrix,
     t: f64,
     l1: i32,
     l2: i32,
@@ -181,25 +211,21 @@ fn int_1d(
     alpha_c: f64,
     alpha_d: f64,
 ) -> f64 {
-    // Use pre-computed values instead of recalculating
-
     // Compute recursion factors using Gamess formulation
     let fact = t / (gamma_ab + gamma_cd) / (1.0 + t);
     let b00 = 0.5 * fact;
     let b1 = 1.0 / (2.0 * gamma_ab * (1.0 + t)) + 0.5 * fact;
     let b1p = 1.0 / (2.0 * gamma_cd * (1.0 + t)) + 0.5 * fact;
 
-    // Allocate G matrix (will be reused across x, y, z by caller in future optimization)
     let n = (l1 + l2) as usize;
     let m = (l3 + l4) as usize;
-    let mut g = GMatrix::new(n, m);
 
-    // Generate intermediate values using recursion
-    recur(&mut g, l1, l2, l3, l4, p, a, b, q, c, d, b00, b1, b1p,
+    // Generate intermediate values using recursion (reuses pre-allocated GMatrix)
+    recur(g, n, m, p, a, b, q, c, d, b00, b1, b1p,
           alpha_a, alpha_b, alpha_c, alpha_d, gamma_ab, gamma_cd);
 
     // Shift to final integral value
-    shift(l1, l2, l3, l4, p, a, b, q, c, d, &g)
+    shift(l1, l2, l3, l4, a, b, c, d, g)
 }
 
 /// Generate intermediate G values using recursion relations
@@ -209,10 +235,8 @@ fn int_1d(
 #[allow(clippy::too_many_arguments)]
 fn recur(
     g: &mut GMatrix,
-    l1: i32,
-    l2: i32,
-    l3: i32,
-    l4: i32,
+    n: usize,
+    m: usize,
     p: f64,
     a: f64,
     b: f64,
@@ -229,9 +253,6 @@ fn recur(
     gamma_ab: f64,
     gamma_cd: f64,
 ) {
-    let n = (l1 + l2) as usize;
-    let m = (l3 + l4) as usize;
-
     // Clear array for reuse
     g.clear();
 
@@ -295,10 +316,8 @@ fn shift(
     j: i32,
     k: i32,
     l: i32,
-    _p: f64,
     a: f64,
     b: f64,
-    _q: f64,
     c: f64,
     d: f64,
     g: &GMatrix,
@@ -333,53 +352,48 @@ fn shift(
 
 /// Compute Rys roots and weights for nth order quadrature
 ///
-/// Returns (roots, weights) for Rys polynomial quadrature of order n
-/// evaluated at X = ρ * r²_PQ
-fn rys_roots(n: usize, x: f64) -> (Vec<f64>, Vec<f64>) {
+/// Returns stack-allocated RysRootsWeights to avoid heap allocation
+fn rys_roots(n: usize, x: f64) -> RysRootsWeights {
+    debug_assert!(n <= MAX_RYS_ORDER, "Rys order {} exceeds max {}", n, MAX_RYS_ORDER);
+
+    let mut rw = RysRootsWeights {
+        roots: [0.0; MAX_RYS_ORDER],
+        weights: [0.0; MAX_RYS_ORDER],
+        n,
+    };
+
     // For very small X, use analytical approximations
     if x < 3e-7 {
-        return rys_roots_small_x(n, x);
+        rys_roots_small_x(&mut rw, x);
+    } else {
+        rys_roots_approximate(&mut rw, x);
     }
 
-    // For moderate X values, use polynomial approximations
-    // (Full implementation would have many polynomial coefficient sets)
-    // For now, fall back to approximate method
-    rys_roots_approximate(n, x)
+    rw
 }
 
 /// Rys roots for very small X using Taylor expansion
-fn rys_roots_small_x(n: usize, x: f64) -> (Vec<f64>, Vec<f64>) {
-    match n {
+fn rys_roots_small_x(rw: &mut RysRootsWeights, x: f64) {
+    match rw.n {
         1 => {
-            let r = vec![0.5 - x / 5.0];
-            let w = vec![1.0 - x / 3.0];
-            (r, w)
+            rw.roots[0] = 0.5 - x / 5.0;
+            rw.weights[0] = 1.0 - x / 3.0;
         }
         2 => {
-            let r = vec![
-                0.130693606237085 - 0.0290430236082028 * x,
-                2.86930639376291 - 0.637623643058102 * x,
-            ];
-            let w = vec![
-                0.652145154862545 - 0.122713621927067 * x,
-                0.347854845137453 - 0.210619711404725 * x,
-            ];
-            (r, w)
+            rw.roots[0] = 0.130693606237085 - 0.0290430236082028 * x;
+            rw.roots[1] = 2.86930639376291 - 0.637623643058102 * x;
+            rw.weights[0] = 0.652145154862545 - 0.122713621927067 * x;
+            rw.weights[1] = 0.347854845137453 - 0.210619711404725 * x;
         }
         3 => {
-            let r = vec![
-                0.0603769246832797 - 0.00928875764357368 * x,
-                0.776823355931043 - 0.119511285527878 * x,
-                6.66279971938567 - 1.02504611068957 * x,
-            ];
-            let w = vec![
-                0.467913934572691 - 0.0564876917232519 * x,
-                0.360761573048137 - 0.149077186455208 * x,
-                0.171324492379169 - 0.127768455150979 * x,
-            ];
-            (r, w)
+            rw.roots[0] = 0.0603769246832797 - 0.00928875764357368 * x;
+            rw.roots[1] = 0.776823355931043 - 0.119511285527878 * x;
+            rw.roots[2] = 6.66279971938567 - 1.02504611068957 * x;
+            rw.weights[0] = 0.467913934572691 - 0.0564876917232519 * x;
+            rw.weights[1] = 0.360761573048137 - 0.149077186455208 * x;
+            rw.weights[2] = 0.171324492379169 - 0.127768455150979 * x;
         }
-        _ => rys_roots_approximate(n, x),
+        _ => rys_roots_approximate(rw, x),
     }
 }
 
@@ -387,20 +401,13 @@ fn rys_roots_small_x(n: usize, x: f64) -> (Vec<f64>, Vec<f64>) {
 ///
 /// This is a fallback for cases not covered by polynomial approximations
 /// Uses Gauss-Legendre quadrature scaled to Rys parameter space
-fn rys_roots_approximate(n: usize, x: f64) -> (Vec<f64>, Vec<f64>) {
-    // Simple approximation: use transformed Gauss-Legendre quadrature
-    // For production use, this should be replaced with full polynomial approximations
-    let mut roots = vec![0.0; n];
-    let mut weights = vec![0.0; n];
-
-    // Use evenly spaced points as a basic approximation
+fn rys_roots_approximate(rw: &mut RysRootsWeights, x: f64) {
+    let n = rw.n;
     for i in 0..n {
         let t = (i as f64 + 0.5) / n as f64;
-        roots[i] = t * (1.0 - x / (2.0 * n as f64));
-        weights[i] = 1.0 / n as f64;
+        rw.roots[i] = t * (1.0 - x / (2.0 * n as f64));
+        rw.weights[i] = 1.0 / n as f64;
     }
-
-    (roots, weights)
 }
 
 #[cfg(test)]
@@ -433,13 +440,12 @@ mod tests {
     #[test]
     fn test_rys_roots_small_x() {
         // Test that we get reasonable roots and weights
-        let (roots, weights) = rys_roots(1, 1e-10);
-        assert_eq!(roots.len(), 1);
-        assert_eq!(weights.len(), 1);
+        let rw = rys_roots(1, 1e-10);
+        assert_eq!(rw.n, 1);
         // For very small X, root should be close to 0.5
-        assert!((roots[0] - 0.5).abs() < 0.01);
+        assert!((rw.roots[0] - 0.5).abs() < 0.01);
         // Weight should be close to 1.0
-        assert!((weights[0] - 1.0).abs() < 0.01);
+        assert!((rw.weights[0] - 1.0).abs() < 0.01);
     }
 
     #[test]
@@ -457,4 +463,3 @@ mod tests {
         assert!((result - 0.842701).abs() < 0.3 || (result - 1.128379).abs() < 0.3);
     }
 }
-
