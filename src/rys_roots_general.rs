@@ -216,7 +216,6 @@ fn sort_rys(n: usize, roots: &mut [f64], weights: &mut [f64]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use approx::assert_relative_eq;
 
     /// Verify that the n-point Rys quadrature rule correctly integrates
     /// all moment integrands F_k(x) = ∫₀¹ t^{2k} exp(-xt²) dt for k = 0..2n-1.
