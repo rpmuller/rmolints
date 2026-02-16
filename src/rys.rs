@@ -12,6 +12,7 @@ use crate::utils::{gaussian_normalization, gaussian_product_center};
 use crate::rys_roots_123::root123;
 use crate::rys_roots_4::root4;
 use crate::rys_roots_5::root5;
+use crate::rys_roots_general::rys_roots_general;
 use std::f64::consts::PI;
 
 /// Maximum Rys quadrature order supported (covers up to f orbitals)
@@ -371,14 +372,7 @@ fn rys_roots(n: usize, x: f64) -> RysRootsWeights {
         1 | 2 | 3 => root123(n, x, &mut rw.roots, &mut rw.weights),
         4 => root4(x, &mut rw.roots, &mut rw.weights),
         5 => root5(x, &mut rw.roots, &mut rw.weights),
-        _ => {
-            // Fallback for orders > 5 (not covered by polynomial tables)
-            for i in 0..n {
-                let t = (i as f64 + 0.5) / n as f64;
-                rw.roots[i] = t * (1.0 - x / (2.0 * n as f64));
-                rw.weights[i] = 1.0 / n as f64;
-            }
-        }
+        _ => rys_roots_general(n, x, &mut rw.roots, &mut rw.weights),
     }
 
     rw
