@@ -577,71 +577,56 @@ See `examples/ratio_analysis.rs` for reference implementation.
 
 ### High Priority (Performance)
 
-1. ~~**Larger Basis Sets**~~ ✅ **COMPLETE**
-   - ✅ Implemented 6-31G, 6-31G(d), 6-31G(d,p) for all elements H-Ar
-   - ✅ Extended all basis sets to elements H through Ar (Z=1-18)
-   - Future: cc-pVDZ, cc-pVTZ, and basis set parsing from standard formats
+1. **Higher Angular Momentum (f, g orbitals)**
+   - Implement `Root6` polynomial tables for Rys quadrature (n ≥ 6), required for f orbitals and above
+   - Thoroughly test d, f, g orbital combinations with 6-31G(d,p) and larger basis sets
+   - Validate against reference codes (Psi4, ORCA)
 
-2. **Integral Screening**
-   - Skip near-zero integrals based on Schwarz inequality
-   - Critical for large molecules (100+ basis functions)
-   - Expected 10-100x speedup for sparse systems
-
-3. **Higher Angular Momentum**
-   - Thoroughly test f, g orbitals (L ≥ 4)
-   - Add complete Rys polynomial tables (currently simplified)
-   - Validate against reference codes
+2. **Extended Basis Sets**
+   - Add cc-pVDZ, cc-pVTZ, aug-cc-pVDZ (Dunning correlation-consistent)
+   - Basis set parsing from standard formats (Basis Set Exchange .nwchem/.g94)
+   - Validate energies against published values
 
 ### Medium Priority (Features)
 
-4. **Hartree-Fock Solver**
-   - SCF implementation using computed integrals
+3. **Hartree-Fock Solver**
+   - SCF loop using computed one- and two-electron integrals
    - DIIS convergence acceleration
-   - Demonstrate end-to-end quantum chemistry calculation
+   - Demonstrates end-to-end quantum chemistry calculation
+
+4. **Gradient Integrals**
+   - Analytic derivatives of one- and two-electron integrals
+   - Required for geometry optimization and frequency calculations
 
 5. **Density Functional Theory (DFT)**
    - Exchange-correlation functionals (LDA, GGA)
-   - Numerical quadrature grids
+   - Numerical integration grids
    - Hybrid functionals (B3LYP)
-
-6. **Gradient Integrals**
-   - Analytic derivatives of integrals
-   - Geometry optimization support
-   - Frequency calculations
 
 ### Low Priority (Integration)
 
-7. **Python Bindings**
+6. **Python Bindings**
    - PyO3 wrapper for Python interoperability
    - NumPy integration for matrices
    - Compare performance to PySCF, Psi4
 
-8. **GPU Offload**
+7. **GPU Offload**
    - Move VRR computation to GPU (CUDA/ROCm)
    - Batch processing for throughput
-   - Target 10-100x speedup for large systems
 
-9. **Benchmark vs Production Codes**
-   - Compare to Gaussian, ORCA, Psi4
-   - Validate correctness on standard test sets
+8. **Benchmark vs Production Codes**
+   - Compare to Gaussian, ORCA, Psi4 on standard test sets
    - Publish performance comparisons
 
 ### Infrastructure
 
-10. **Continuous Integration**
-    - Automated testing on multiple platforms
-    - Performance regression tracking
-    - Documentation generation
+9. **Continuous Integration**
+   - Automated testing on multiple platforms
+   - Performance regression tracking
 
-11. **Extended Documentation**
-    - Tutorial for quantum chemistry beginners
-    - API documentation with examples
-    - Theory background for each method
-
-12. **Code Organization**
-    - Split large modules (rys.rs is 800+ lines)
-    - Reduce code duplication across methods
-    - Improve error handling and validation
+10. **Code Organization**
+    - Reduce code duplication across ERI methods
+    - Improve error handling and input validation
 
 ---
 
