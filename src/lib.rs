@@ -19,6 +19,9 @@
 pub mod one_electron;
 pub mod two_electron;
 pub mod rys;
+pub(crate) mod rys_roots_123;
+pub(crate) mod rys_roots_4;
+pub(crate) mod rys_roots_5;
 pub mod hgp;
 #[cfg(feature = "simd")]
 pub mod hgp_simd;

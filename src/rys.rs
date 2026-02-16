@@ -9,6 +9,9 @@
 
 use crate::common::{CGBF, Vec3};
 use crate::utils::{gaussian_normalization, gaussian_product_center};
+use crate::rys_roots_123::root123;
+use crate::rys_roots_4::root4;
+use crate::rys_roots_5::root5;
 use std::f64::consts::PI;
 
 /// Maximum Rys quadrature order supported (covers up to f orbitals)
@@ -352,7 +355,9 @@ fn shift(
 
 /// Compute Rys roots and weights for nth order quadrature
 ///
-/// Returns stack-allocated RysRootsWeights to avoid heap allocation
+/// Returns stack-allocated RysRootsWeights to avoid heap allocation.
+/// Uses polynomial approximations from the GAMESS reference (crys.c) for n=1..5,
+/// and a simple Gauss-Legendre fallback for higher orders.
 fn rys_roots(n: usize, x: f64) -> RysRootsWeights {
     debug_assert!(n <= MAX_RYS_ORDER, "Rys order {} exceeds max {}", n, MAX_RYS_ORDER);
 
@@ -362,52 +367,21 @@ fn rys_roots(n: usize, x: f64) -> RysRootsWeights {
         n,
     };
 
-    // For very small X, use analytical approximations
-    if x < 3e-7 {
-        rys_roots_small_x(&mut rw, x);
-    } else {
-        rys_roots_approximate(&mut rw, x);
+    match n {
+        1 | 2 | 3 => root123(n, x, &mut rw.roots, &mut rw.weights),
+        4 => root4(x, &mut rw.roots, &mut rw.weights),
+        5 => root5(x, &mut rw.roots, &mut rw.weights),
+        _ => {
+            // Fallback for orders > 5 (not covered by polynomial tables)
+            for i in 0..n {
+                let t = (i as f64 + 0.5) / n as f64;
+                rw.roots[i] = t * (1.0 - x / (2.0 * n as f64));
+                rw.weights[i] = 1.0 / n as f64;
+            }
+        }
     }
 
     rw
-}
-
-/// Rys roots for very small X using Taylor expansion
-fn rys_roots_small_x(rw: &mut RysRootsWeights, x: f64) {
-    match rw.n {
-        1 => {
-            rw.roots[0] = 0.5 - x / 5.0;
-            rw.weights[0] = 1.0 - x / 3.0;
-        }
-        2 => {
-            rw.roots[0] = 0.130693606237085 - 0.0290430236082028 * x;
-            rw.roots[1] = 2.86930639376291 - 0.637623643058102 * x;
-            rw.weights[0] = 0.652145154862545 - 0.122713621927067 * x;
-            rw.weights[1] = 0.347854845137453 - 0.210619711404725 * x;
-        }
-        3 => {
-            rw.roots[0] = 0.0603769246832797 - 0.00928875764357368 * x;
-            rw.roots[1] = 0.776823355931043 - 0.119511285527878 * x;
-            rw.roots[2] = 6.66279971938567 - 1.02504611068957 * x;
-            rw.weights[0] = 0.467913934572691 - 0.0564876917232519 * x;
-            rw.weights[1] = 0.360761573048137 - 0.149077186455208 * x;
-            rw.weights[2] = 0.171324492379169 - 0.127768455150979 * x;
-        }
-        _ => rys_roots_approximate(rw, x),
-    }
-}
-
-/// Approximate Rys roots using a simple method
-///
-/// This is a fallback for cases not covered by polynomial approximations
-/// Uses Gauss-Legendre quadrature scaled to Rys parameter space
-fn rys_roots_approximate(rw: &mut RysRootsWeights, x: f64) {
-    let n = rw.n;
-    for i in 0..n {
-        let t = (i as f64 + 0.5) / n as f64;
-        rw.roots[i] = t * (1.0 - x / (2.0 * n as f64));
-        rw.weights[i] = 1.0 / n as f64;
-    }
 }
 
 #[cfg(test)]

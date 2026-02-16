@@ -17,7 +17,7 @@ pub(crate) fn root123(n: usize, x: f64, roots: &mut [f64], weights: &mut [f64]) 
     let mut ww2: f64 = 0.0;
     let mut ww3: f64 = 0.0;
 
-    if x < 3.e-7 {
+    if x < 3.0e-7 {
         if n == 1 {
             rt1 = 0.5E+00 - x / 5.0E+00;
             ww1 = 1.0E+00 - x / 3.0E+00;
